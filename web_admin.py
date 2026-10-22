@@ -269,8 +269,10 @@ def config():
                 set_key(ENV_PATH, source_key, '1' if is_checked else '0')
 
         load_dotenv(ENV_PATH, override=True)
-        app.config['BASIC_AUTH_USERNAME'] = os.getenv('ADMIN_USERNAME', 'admin')
-        app.config['BASIC_AUTH_PASSWORD'] = os.getenv('ADMIN_PASSWORD', 'changeme123')
+        if request.form.get('ADMIN_USERNAME', '').strip():
+            app.config['BASIC_AUTH_USERNAME'] = request.form.get('ADMIN_USERNAME').strip()
+        if request.form.get('ADMIN_PASSWORD', '').strip():
+            app.config['BASIC_AUTH_PASSWORD'] = os.getenv('ADMIN_PASSWORD', app.config['BASIC_AUTH_PASSWORD'])
         flash("Cấu hình đã được lưu thành công!", "success")
         return redirect(url_for('config'))
 

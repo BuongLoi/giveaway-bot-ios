@@ -28,13 +28,10 @@ CONTEXT_KEYWORDS = [
     'код', 'лицензия', 'промокод', 'ключ'
 ]
 
-# Nguồn chuyên biệt 100% là giveaway/freebie
+# Nguồn chuyên biệt 100% là giveaway/freebie (mọi bài đăng đều là giveaway)
 DEDICATED_GIVEAWAY_SOURCES = {
     'sharewareonsale', 'giveawayoftheday', 'tickcoupon',
-    'gotd_ios', 'gotd_mac', 'freeappsforme', 'nsane_deals',
-    'reddit_ios', 'reddit_pc',
-    'reddit_apphookup', 'reddit_efreebies', 'reddit_giveaways',
-    'reddit_freegamefindings', 'reddit_promocode'
+    'gotd_ios', 'gotd_mac', 'freeappsforme', 'nsane_deals'
 }
 
 # Regex kiểm tra tín hiệu Giveaway trên Tiêu đề cho các trang báo công nghệ tổng hợp
