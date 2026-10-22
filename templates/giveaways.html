@@ -1,0 +1,137 @@
+{% extends "layout.html" %}
+{% block title %}Kho Quà Tặng — GiveawayHunter{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-title" style="justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
+        <span><span class="icon">🎁</span> Kho Giveaway ({{ total }} mục)</span>
+        <form method="POST" action="/action/scan" style="margin:0;">
+            <button type="submit" class="btn btn-sm btn-success" onclick="triggerHaptic('medium')">⚡ Quét mới</button>
+        </form>
+    </div>
+
+    <!-- Platform Filter Pills (Chuẩn App iOS/Mobile) -->
+    <div class="filter-pills">
+        <a href="/giveaways{% if search %}?q={{ search }}{% endif %}"
+           class="pill {% if not platform %}active{% endif %}" onclick="triggerHaptic('selection')">
+           🌐 Tất cả
+        </a>
+        <a href="/giveaways?platform=ios{% if search %}&q={{ search }}{% endif %}"
+           class="pill {% if platform == 'ios' %}active{% endif %}" onclick="triggerHaptic('selection')">
+           🍎 iOS / iPadOS
+        </a>
+        <a href="/giveaways?platform=windows{% if search %}&q={{ search }}{% endif %}"
+           class="pill {% if platform == 'windows' %}active{% endif %}" onclick="triggerHaptic('selection')">
+           🪟 Windows
+        </a>
+        <a href="/giveaways?platform=macos{% if search %}&q={{ search }}{% endif %}"
+           class="pill {% if platform == 'macos' %}active{% endif %}" onclick="triggerHaptic('selection')">
+           🍏 macOS
+        </a>
+        <a href="/giveaways?platform=game{% if search %}&q={{ search }}{% endif %}"
+           class="pill {% if platform == 'game' %}active{% endif %}" onclick="triggerHaptic('selection')">
+           🎮 Game Free
+        </a>
+        <a href="/giveaways?platform=has_code{% if search %}&q={{ search }}{% endif %}"
+           class="pill {% if platform == 'has_code' %}active{% endif %}" onclick="triggerHaptic('selection')">
+           🔑 Có Key
+        </a>
+    </div>
+
+    <!-- Search Bar -->
+    <form class="search-bar" method="GET" action="/giveaways">
+        {% if platform %}
+        <input type="hidden" name="platform" value="{{ platform }}">
+        {% endif %}
+        <input type="text" name="q" value="{{ search }}" placeholder="Tìm tên app, game, phần mềm, nguồn (vd: appadvice, vpn, pdf)...">
+        <button type="submit" class="btn btn-sm">🔍 Tìm</button>
+        {% if search or platform %}
+        <a href="/giveaways" class="btn btn-sm btn-outline">✕ Đặt lại</a>
+        {% endif %}
+    </form>
+
+    <!-- Mobile-First Card Feed -->
+    <div class="giveaway-feed">
+        {% for item in items %}
+        <div class="giveaway-item">
+            <div class="giveaway-meta">
+                <span class="badge badge-platform badge-platform-{{ item.platform or 'other' }}">
+                    {{ get_platform_badge(item.platform) }}
+                </span>
+                <span class="badge badge-source">{{ item.source }}</span>
+                {% if item.tags %}
+                    {% for tag in item.tags.split(',') %}
+                        {% if tag.strip() %}
+                        <span class="badge badge-tag">{{ tag.strip() }}</span>
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
+                {% if item.confidence_score >= 50 %}
+                    <span class="badge badge-score-high">{{ item.confidence_score }}%</span>
+                {% elif item.confidence_score > 0 %}
+                    <span class="badge badge-score-low">{{ item.confidence_score }}%</span>
+                {% endif %}
+                <span class="giveaway-time">{{ item.first_seen_at[:16].replace('T', ' ') }}</span>
+            </div>
+
+            <a class="giveaway-title" href="{{ item.canonical_url }}" target="_blank" rel="noopener">
+                {{ item.title }}
+            </a>
+
+            {% if item.expiry_hint %}
+            <div class="giveaway-expiry">⏰ {{ item.expiry_hint }}</div>
+            {% endif %}
+
+            {% if item.codes %}
+            <div class="code-box-list">
+                {% for code in item.codes.split(',') %}
+                    {% set clean_code = code.strip() %}
+                    {% if clean_code %}
+                    <div class="code-chip">
+                        <code>{{ clean_code }}</code>
+                        <button type="button" class="btn-copy" onclick="copyCode('{{ clean_code }}', this)">📋 Chép Key</button>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <div class="giveaway-actions">
+                <a href="{{ item.canonical_url }}" target="_blank" rel="noopener" class="btn btn-sm" onclick="triggerHaptic('light')">
+                    {% if item.platform == 'ios' %}🍎 Nhận trên App Store / Bài viết{% else %}🔗 Mở trang nhận quà{% endif %}
+                </a>
+            </div>
+        </div>
+        {% endfor %}
+
+        {% if not items %}
+        <div class="empty-state">
+            <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📭</div>
+            <div>Chưa có giveaway nào khớp với bộ lọc hiện tại.</div>
+            <div style="font-size: 0.8rem; margin-top: 0.4rem;">Hãy bấm <b>⚡ Quét mới</b> để bot cập nhật dữ liệu mới nhất.</div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div class="pagination">
+        {% if page > 1 %}
+            <a href="/giveaways?page={{ page-1 }}{% if platform %}&platform={{ platform }}{% endif %}{% if search %}&q={{ search }}{% endif %}">← Trước</a>
+        {% endif %}
+        {% for p in range(1, total_pages+1) %}
+            {% if p == page %}
+                <span class="active">{{ p }}</span>
+            {% elif p <= 3 or p >= total_pages - 2 or (p >= page - 1 and p <= page + 1) %}
+                <a href="/giveaways?page={{ p }}{% if platform %}&platform={{ platform }}{% endif %}{% if search %}&q={{ search }}{% endif %}">{{ p }}</a>
+            {% elif p == 4 or p == total_pages - 3 %}
+                <span style="border:none; color: var(--text-muted);">…</span>
+            {% endif %}
+        {% endfor %}
+        {% if page < total_pages %}
+            <a href="/giveaways?page={{ page+1 }}{% if platform %}&platform={{ platform }}{% endif %}{% if search %}&q={{ search }}{% endif %}">Sau →</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

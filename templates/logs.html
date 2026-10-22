@@ -1,0 +1,11 @@
+{% extends "layout.html" %}
+{% block title %}Logs — GiveawayBot{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-title"><span class="icon">📋</span> System Logs (200 dòng cuối)</div>
+    <div class="log-viewer">
+        <pre style="margin: 0; white-space: pre-wrap; word-wrap: break-word;">{{ log_content }}</pre>
+    </div>
+</div>
+{% endblock %}

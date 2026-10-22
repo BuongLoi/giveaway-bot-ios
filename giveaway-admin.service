@@ -1,0 +1,18 @@
+[Unit]
+Description=Giveaway Bot - Web Admin UI (Gunicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=claw
+Group=claw
+WorkingDirectory=/home/claw/giveaway-bot
+# Gunicorn: 2 workers, bind port 5000, 120s timeout
+ExecStart=/home/claw/giveaway-bot/venv/bin/gunicorn web_admin:app --bind 0.0.0.0:5000 --workers 2 --timeout 120 --access-logfile - --error-logfile -
+EnvironmentFile=/home/claw/giveaway-bot/.env
+
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

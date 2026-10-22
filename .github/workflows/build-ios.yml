@@ -1,0 +1,56 @@
+name: Build iOS (.ipa)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Unsigned IPA
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 16
+        run: |
+          LATEST_XCODE=$(find /Applications -maxdepth 1 -name "Xcode_16*.app" | sort -V | tail -n 1)
+          if [ -n "$LATEST_XCODE" ]; then
+            echo "Selecting $LATEST_XCODE"
+            sudo xcode-select -s "$LATEST_XCODE/Contents/Developer"
+          fi
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode Project
+        run: xcodegen generate
+
+      - name: Build Archive (Unsigned)
+        run: |
+          xcodebuild archive \
+            -project GiveawayHunter.xcodeproj \
+            -scheme GiveawayHunter \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "build/GiveawayHunter.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Package Payload into IPA
+        run: |
+          mkdir -p Payload
+          cp -r "build/GiveawayHunter.xcarchive/Products/Applications/GiveawayHunter.app" Payload/
+          zip -r -q "GiveawayHunter.ipa" Payload
+          ls -lh GiveawayHunter.ipa
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GiveawayHunter-ipa
+          path: GiveawayHunter.ipa
+          retention-days: 30

@@ -1,0 +1,25 @@
+# Environment & Secrets
+.env
+*.session
+*.session-journal
+
+# Database & Logs
+*.db
+*.db-journal
+*.log
+*.log.*
+
+# Old zip archives & Build artifacts
+*.zip
+build/
+Payload/
+*.xcodeproj/
+*.xcworkspace/
+*.ipa
+
+# Python cache & virtual environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+venv/
+.venv/

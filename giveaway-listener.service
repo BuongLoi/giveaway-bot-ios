@@ -1,0 +1,20 @@
+[Unit]
+Description=Giveaway Bot - Telethon Listener
+After=network.target
+
+[Service]
+Type=simple
+User=claw
+Group=claw
+WorkingDirectory=/home/claw/giveaway-bot
+ExecStart=/home/claw/giveaway-bot/venv/bin/python listener.py
+EnvironmentFile=/home/claw/giveaway-bot/.env
+
+# Chỉ restart khi lỗi thật (exit code != 0), KHÔNG restart khi bị tắt chủ động
+Restart=on-failure
+RestartSec=30
+# Nếu listener bị tắt trong .env (exit 1), không restart
+RestartPreventExitStatus=1
+
+[Install]
+WantedBy=multi-user.target

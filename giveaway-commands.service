@@ -1,0 +1,17 @@
+[Unit]
+Description=Giveaway Bot - Telegram Commands (/status /scan /stats)
+After=network.target
+
+[Service]
+Type=simple
+User=claw
+Group=claw
+WorkingDirectory=/home/claw/giveaway-bot
+ExecStart=/home/claw/giveaway-bot/venv/bin/python bot_commands.py
+EnvironmentFile=/home/claw/giveaway-bot/.env
+
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

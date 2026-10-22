@@ -1,0 +1,106 @@
+{% extends "layout.html" %}
+{% block title %}Dashboard — GiveawayHunter{% endblock %}
+
+{% block content %}
+<!-- Action Bar -->
+<div class="action-bar">
+    <form method="POST" action="/action/scan" style="margin:0;">
+        <button type="submit" class="btn btn-success" onclick="triggerHaptic('medium')">⚡ Quét nguồn ngay</button>
+    </form>
+    <a href="/giveaways?platform=ios" class="btn btn-outline">🍎 Xem quà iOS ({{ stats.ios_count }})</a>
+    <a href="/giveaways?platform=windows" class="btn btn-outline">🪟 Xem quà Windows ({{ stats.windows_count }})</a>
+</div>
+
+<!-- Stats -->
+<div class="card">
+    <div class="card-title"><span class="icon">📊</span> Thống kê Hệ thống</div>
+    <div class="stats-grid">
+        <a href="/giveaways" class="stat-box" style="text-decoration:none;">
+            <div class="stat-value">{{ stats.total }}</div>
+            <div class="stat-label">Tổng thu thập</div>
+        </a>
+        <a href="/giveaways?platform=ios" class="stat-box" style="text-decoration:none;">
+            <div class="stat-value">{{ stats.ios_count }}</div>
+            <div class="stat-label">🍎 Ứng dụng / Game iOS</div>
+        </a>
+        <a href="/giveaways?platform=windows" class="stat-box" style="text-decoration:none;">
+            <div class="stat-value">{{ stats.windows_count }}</div>
+            <div class="stat-label">🪟 Phần mềm Windows</div>
+        </a>
+        <a href="/giveaways?platform=has_code" class="stat-box" style="text-decoration:none;">
+            <div class="stat-value">{{ stats.with_codes }}</div>
+            <div class="stat-label">🔑 Có chứa License Key</div>
+        </a>
+    </div>
+</div>
+
+<!-- Sources breakdown -->
+{% if stats.sources %}
+<div class="card">
+    <div class="card-title"><span class="icon">🌐</span> Top Nguồn Dữ Liệu</div>
+    <div class="stats-grid">
+        {% for source in stats.sources %}
+        <a href="/giveaways?q={{ source[0] }}" class="stat-box" style="text-decoration:none;">
+            <div class="stat-value" style="font-size: 1.5rem;">{{ source[1] }}</div>
+            <div class="stat-label">{{ source[0] }}</div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Recent Giveaways Cards -->
+{% if stats.recent %}
+<div class="card">
+    <div class="card-title" style="justify-content: space-between;">
+        <span><span class="icon">🕐</span> Giveaway Mới Nhất</span>
+        <a href="/giveaways" class="btn btn-sm btn-outline">Xem tất cả →</a>
+    </div>
+
+    <div class="giveaway-feed">
+        {% for item in stats.recent %}
+        <div class="giveaway-item">
+            <div class="giveaway-meta">
+                <span class="badge badge-platform badge-platform-{{ item.platform or 'other' }}">
+                    {{ get_platform_badge(item.platform) }}
+                </span>
+                <span class="badge badge-source">{{ item.source }}</span>
+                {% if item.confidence_score >= 50 %}
+                    <span class="badge badge-score-high">Tin cậy {{ item.confidence_score }}%</span>
+                {% endif %}
+                <span class="giveaway-time">{{ item.first_seen_at[:16].replace('T', ' ') }}</span>
+            </div>
+
+            <a class="giveaway-title" href="{{ item.canonical_url }}" target="_blank" rel="noopener">
+                {{ item.title }}
+            </a>
+
+            {% if item.expiry_hint %}
+            <div class="giveaway-expiry">⏰ Thời hạn: {{ item.expiry_hint }}</div>
+            {% endif %}
+
+            {% if item.codes %}
+            <div class="code-box-list">
+                {% for code in item.codes.split(',') %}
+                    {% set clean_code = code.strip() %}
+                    {% if clean_code %}
+                    <div class="code-chip">
+                        <code>{{ clean_code }}</code>
+                        <button type="button" class="btn-copy" onclick="copyCode('{{ clean_code }}', this)">📋 Chép</button>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <div class="giveaway-actions">
+                <a href="{{ item.canonical_url }}" target="_blank" rel="noopener" class="btn btn-sm" onclick="triggerHaptic('light')">
+                    {% if item.platform == 'ios' %}🍎 Mở trang tải / App Store{% else %}🔗 Mở trang nhận bản quyền{% endif %}
+                </a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

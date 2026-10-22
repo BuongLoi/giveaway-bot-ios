@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="GiveawayBot">
+    <meta name="theme-color" content="#0f172a">
+    <title>{% block title %}Giveaway Hunter — iOS & PC{% endblock %}</title>
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" href="/static/app-icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/static/app-icon.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <!-- Top Desktop / Tablet Navbar -->
+    <nav class="navbar">
+        <a href="/" class="nav-brand">🎁 GiveawayHunter</a>
+        <div class="nav-links">
+            <a href="/" {% if request.path == '/' %}class="active"{% endif %}>📊 Tổng quan</a>
+            <a href="/giveaways" {% if request.path == '/giveaways' and not request.args.get('platform') %}class="active"{% endif %}>📦 Tất cả</a>
+            <a href="/giveaways?platform=ios" {% if request.args.get('platform') == 'ios' %}class="active"{% endif %}>🍎 iOS Free</a>
+            <a href="/giveaways?platform=windows" {% if request.args.get('platform') == 'windows' %}class="active"{% endif %}>🪟 Windows</a>
+            <a href="/config" {% if request.path == '/config' %}class="active"{% endif %}>⚙️ Cấu hình</a>
+            <a href="/logs" {% if request.path == '/logs' %}class="active"{% endif %}>📜 Logs</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- iOS Style Bottom Tab Bar (Mobile / PWA) -->
+    <nav class="ios-tabbar">
+        <a href="/giveaways" class="tab-item {% if request.path == '/giveaways' and not request.args.get('platform') %}active{% endif %}" onclick="triggerHaptic('selection')">
+            <span class="tab-icon">🎁</span>
+            <span class="tab-label">Tất cả</span>
+        </a>
+        <a href="/giveaways?platform=ios" class="tab-item {% if request.args.get('platform') == 'ios' %}active{% endif %}" onclick="triggerHaptic('selection')">
+            <span class="tab-icon">🍎</span>
+            <span class="tab-label">iOS Free</span>
+        </a>
+        <a href="/giveaways?platform=windows" class="tab-item {% if request.args.get('platform') == 'windows' %}active{% endif %}" onclick="triggerHaptic('selection')">
+            <span class="tab-icon">🪟</span>
+            <span class="tab-label">Windows</span>
+        </a>
+        <a href="/" class="tab-item {% if request.path == '/' %}active{% endif %}" onclick="triggerHaptic('selection')">
+            <span class="tab-icon">📊</span>
+            <span class="tab-label">Thống kê</span>
+        </a>
+        <a href="/config" class="tab-item {% if request.path == '/config' %}active{% endif %}" onclick="triggerHaptic('selection')">
+            <span class="tab-icon">⚙️</span>
+            <span class="tab-label">Cài đặt</span>
+        </a>
+    </nav>
+
+    <div id="toast" class="toast">Đã sao chép mã!</div>
+
+    <script>
+        function triggerHaptic(type) {
+            try {
+                if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.haptic) {
+                    window.webkit.messageHandlers.haptic.postMessage({ type: type || 'light' });
+                } else if (navigator.vibrate) {
+                    navigator.vibrate(12);
+                }
+            } catch (e) {}
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            if (!t) return;
+            t.textContent = msg;
+            t.classList.add('show');
+            clearTimeout(window._toastTimer);
+            window._toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+        }
+
+        function copyCode(codeText, btnEl) {
+            triggerHaptic('medium');
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(codeText).then(() => {
+                    showToast('📋 Đã copy: ' + codeText);
+                });
+            } else {
+                const ta = document.createElement('textarea');
+                ta.value = codeText;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showToast('📋 Đã copy: ' + codeText);
+            }
+            if (btnEl) {
+                const orig = btnEl.innerHTML;
+                btnEl.innerHTML = '✅ Đã chép';
+                setTimeout(() => { btnEl.innerHTML = orig; }, 1500);
+            }
+        }
+
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').catch(() => {});
+            });
+        }
+    </script>
+</body>
+</html>

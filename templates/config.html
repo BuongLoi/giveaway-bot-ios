@@ -1,0 +1,152 @@
+{% extends "layout.html" %}
+{% block title %}Cấu hình — GiveawayHunter{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-title"><span class="icon">⚙️</span> Cấu hình Bot (.env)</div>
+    <form method="POST" action="/config">
+        
+        <!-- Cơ bản -->
+        <div class="form-section">🔑 Telegram Bot</div>
+        <div class="form-group">
+            <label class="form-label">Bot Token (Bắt buộc)</label>
+            <input type="text" name="TELEGRAM_BOT_TOKEN" class="form-control" value="{{ env.get('TELEGRAM_BOT_TOKEN', '') }}">
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">Chat ID (Bắt buộc)</label>
+                <input type="text" name="TELEGRAM_CHAT_ID" class="form-control" value="{{ env.get('TELEGRAM_CHAT_ID', '') }}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Fallback Scraper (Cào HTML gốc khi RSS ngắn)</label>
+                <select name="ENABLE_FALLBACK_SCRAPER" class="form-control">
+                    <option value="1" {% if env.get('ENABLE_FALLBACK_SCRAPER', '1') == '1' %}selected{% endif %}>Bật</option>
+                    <option value="0" {% if env.get('ENABLE_FALLBACK_SCRAPER', '1') == '0' %}selected{% endif %}>Tắt</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Bộ lọc -->
+        <div class="form-section">🎯 Bộ lọc thông minh</div>
+        <div class="form-group">
+            <label class="form-label">Keywords (chỉ gửi bài chứa từ này, để trống = lấy hết các bài giveaway)</label>
+            <input type="text" name="KEYWORDS" class="form-control" value="{{ env.get('KEYWORDS', '') }}" placeholder="ios,iphone,windows,antivirus,vpn,pdf">
+            <div class="form-hint">Phân tách bằng dấu phẩy. Để trống nếu muốn nhận tất cả giveaway hợp lệ.</div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Negative Keywords (tự động bỏ qua bài chứa từ này)</label>
+            <input type="text" name="NEGATIVE_KEYWORDS" class="form-control" value="{{ env.get('NEGATIVE_KEYWORDS', '') }}" placeholder="job,interview,hiring,resume,salary,career">
+            <div class="form-hint">Loại bỏ bài viết không liên quan (ví dụ: tuyển dụng, podcast...).</div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Điểm tin cậy tối thiểu (0-100)</label>
+            <input type="number" name="MIN_CONFIDENCE_SCORE" class="form-control" value="{{ env.get('MIN_CONFIDENCE_SCORE', '0') }}" min="0" max="100">
+            <div class="form-hint">Đặt &gt; 0 để chỉ gửi Telegram bài có code/deal đáng tin cậy. Khuyến nghị: 0 hoặc 50.</div>
+        </div>
+
+        <!-- Nguồn iOS / Apple -->
+        <div class="form-section">🍎 Nguồn Ứng dụng & Game iOS / macOS</div>
+        {% set ios_sources = [
+            ('SOURCE_GOTD_IOS', '🍎 GiveawayOfTheDay iOS (iPhone/iPad Apps Gone Free)'),
+            ('SOURCE_GOTD_MAC', '🍏 GiveawayOfTheDay macOS (Phần mềm Mac Bản quyền)'),
+            ('SOURCE_9TO5TOYS_APPS', '🏷️ 9to5Toys App Deals & Freebies (iOS/Android)'),
+            ('SOURCE_IDOWNLOADBLOG', '📱 iDownloadBlog (iOS & Mac Giveaways/Apps)'),
+        ] %}
+        {% for key, label in ios_sources %}
+        <div class="toggle-row">
+            <span class="toggle-name">{{ label }}</span>
+            <label class="toggle-switch">
+                <input type="hidden" name="{{ key }}" value="0">
+                <input type="checkbox" name="{{ key }}" value="1" {% if env.get(key, '1') in ['1', 'true', 'yes', 'on', ''] %}checked{% endif %}>
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
+        {% endfor %}
+
+        <!-- Nguồn Windows / Đa nền tảng -->
+        <div class="form-section">🪟 Nguồn Phần mềm Windows, Cộng đồng & Game</div>
+        {% set source_list = [
+            ('SOURCE_SHAREWAREONSALE', '⭐ SharewareOnSale.com'),
+            ('SOURCE_GIVEAWAYOFTHEDAY', '⭐ GiveawayOfTheDay.com (Windows PC)'),
+            ('SOURCE_TICKCOUPON', '⭐ TickCoupon.com'),
+            ('SOURCE_REDDIT_RSS', '🤖 Reddit Multireddit (r/AppHookup, r/iphoneapps, r/iosgaming, r/FreeGameFindings...)'),
+            ('SOURCE_GHACKS', '📰 gHacks.net'),
+            ('SOURCE_BETANEWS', '📰 BetaNews.com'),
+            ('SOURCE_SOFTPEDIA', '📰 Softpedia.com'),
+            ('SOURCE_DIGITALTRENDS', '📰 DigitalTrends.com'),
+            ('SOURCE_MAKEUSEOF', '📰 MakeUseOf.com'),
+            ('SOURCE_NSANE_DEALS', '💬 NSANE Forums'),
+            ('SOURCE_COMSS', '💬 Comss.ru'),
+            ('SOURCE_ITSFOSS', '💬 ItsFoss.com'),
+            ('SOURCE_FREEAPPSFORME', '💬 FreeAppsForMe.com'),
+            ('SOURCE_GECKOANDFLY', '💬 GeckoAndFly.com'),
+            ('SOURCE_STEAM_NEWRELEASES', '🎮 Steam New Releases'),
+        ] %}
+        {% for key, label in source_list %}
+        <div class="toggle-row">
+            <span class="toggle-name">{{ label }}</span>
+            <label class="toggle-switch">
+                <input type="hidden" name="{{ key }}" value="0">
+                <input type="checkbox" name="{{ key }}" value="1" {% if env.get(key, '1') in ['1', 'true', 'yes', 'on', ''] %}checked{% endif %}>
+                <span class="toggle-slider"></span>
+            </label>
+        </div>
+        {% endfor %}
+
+        <!-- Reddit -->
+        <div class="form-section">🤖 Reddit API (Tuỳ chọn — Không điền sẽ tự dùng RSS)</div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">Client ID</label>
+                <input type="text" name="REDDIT_CLIENT_ID" class="form-control" value="{{ env.get('REDDIT_CLIENT_ID', '') }}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Client Secret</label>
+                <input type="text" name="REDDIT_CLIENT_SECRET" class="form-control" value="{{ env.get('REDDIT_CLIENT_SECRET', '') }}">
+            </div>
+        </div>
+
+        <!-- Telethon -->
+        <div class="form-section">📡 Telethon Listener (Phase 3)</div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">Bật/Tắt Listener</label>
+                <select name="ENABLE_TELETHON_LISTENER" class="form-control">
+                    <option value="0" {% if env.get('ENABLE_TELETHON_LISTENER', '0') == '0' %}selected{% endif %}>Tắt</option>
+                    <option value="1" {% if env.get('ENABLE_TELETHON_LISTENER', '0') == '1' %}selected{% endif %}>Bật</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">API ID</label>
+                <input type="text" name="TELEGRAM_API_ID" class="form-control" value="{{ env.get('TELEGRAM_API_ID', '') }}">
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">API Hash</label>
+            <input type="text" name="TELEGRAM_API_HASH" class="form-control" value="{{ env.get('TELEGRAM_API_HASH', '') }}">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Các kênh theo dõi</label>
+            <input type="text" name="TELETHON_CHANNELS" class="form-control" value="{{ env.get('TELETHON_CHANNELS', '@sharewareonsale,@giveawayoftheday') }}">
+        </div>
+
+        <!-- Admin -->
+        <div class="form-section" style="color: var(--danger);">🔒 Bảo mật Web Admin</div>
+        <div class="form-row">
+            <div class="form-group">
+                <label class="form-label">Tài khoản Admin</label>
+                <input type="text" name="ADMIN_USERNAME" class="form-control" value="{{ env.get('ADMIN_USERNAME', 'admin') }}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Mật khẩu Admin (Để trống nếu không muốn đổi)</label>
+                <input type="password" name="ADMIN_PASSWORD" class="form-control" value="" placeholder="Nhập mật khẩu mới nếu muốn thay đổi...">
+            </div>
+        </div>
+
+        <div style="margin-top: 2rem;">
+            <button type="submit" class="btn">💾 Lưu cấu hình</button>
+            <p class="form-hint" style="margin-top: 0.75rem;">Sau khi lưu, hãy bấm "⚡ Quét nguồn ngay" trên Dashboard để áp dụng tức thì.</p>
+        </div>
+    </form>
+</div>
+{% endblock %}
