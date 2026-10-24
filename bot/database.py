@@ -7,9 +7,14 @@ logger = logging.getLogger(__name__)
 
 
 def get_connection():
-    """Tạo kết nối tới SQLite database."""
-    conn = sqlite3.connect(DB_PATH)
+    """Tạo kết nối tới SQLite database (bật WAL và timeout=20s chống lỗi database is locked)."""
+    conn = sqlite3.connect(DB_PATH, timeout=20)
     conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=20000")
+    except Exception:
+        pass
     return conn
 
 
@@ -92,7 +97,6 @@ def check_and_save_giveaway(
     row = cursor.fetchone()
 
     if not row:
-        # Bản ghi mới
         cursor.execute('''
             INSERT INTO giveaways 
             (source, canonical_url, guid, title, published_at, content_hash, codes_hash,
@@ -108,13 +112,11 @@ def check_and_save_giveaway(
         conn.close()
         return {'action': 'new', 'id': record_id}
 
-    # Nếu bản ghi đã tồn tại, kiểm tra sự thay đổi codes_hash
     record_id = row['id']
     old_codes_hash = row['codes_hash']
     was_notified = row['notified_at'] is not None
 
     if old_codes_hash != codes_hash:
-        # Có sự thay đổi về code
         cursor.execute('''
             UPDATE giveaways 
             SET title = ?, codes_hash = ?, codes = ?, content_hash = ?,
@@ -125,7 +127,6 @@ def check_and_save_giveaway(
         conn.close()
         return {'action': 'update', 'id': record_id}
     elif not was_notified:
-        # Bài đã lưu DB nhưng chưa từng gửi Telegram (ví dụ: từ dry-run hoặc lỗi gửi)
         cursor.execute('''
             UPDATE giveaways
             SET last_seen_at = ?, platform = ?, tags = ?, expiry_hint = ?, confidence_score = ?
@@ -135,7 +136,6 @@ def check_and_save_giveaway(
         conn.close()
         return {'action': 'resend', 'id': record_id}
     else:
-        # Đã gửi rồi và không có thay đổi -> bỏ qua
         cursor.execute('UPDATE giveaways SET last_seen_at = ? WHERE id = ?', (now, record_id))
         conn.commit()
         conn.close()

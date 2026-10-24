@@ -2,7 +2,7 @@ import time
 import xml.etree.ElementTree as ET
 import requests
 from bot.sources.base import BaseSource
-from bot.config import REQUEST_TIMEOUT
+from bot.config import REQUEST_TIMEOUT, REDDIT_USER_AGENT
 
 try:
     import feedparser
@@ -18,7 +18,6 @@ def _parse_feed_fallback(xml_bytes: bytes) -> list:
     entries = []
     root = ET.fromstring(xml_bytes)
 
-    # 1. RSS 2.0 <item>
     for item in root.findall(".//item"):
         title = (item.findtext("title") or "").strip()
         link = (item.findtext("link") or "").strip()
@@ -40,7 +39,6 @@ def _parse_feed_fallback(xml_bytes: bytes) -> list:
     if entries:
         return entries
 
-    # 2. Atom <entry>
     atom_ns = "{http://www.w3.org/2005/Atom}"
     for entry in root.findall(f".//{atom_ns}entry"):
         title = (entry.findtext(f"{atom_ns}title") or "").strip()
@@ -82,9 +80,22 @@ class RSSSource(BaseSource):
 
         self.logger.info(f"Đang tải RSS từ {self.feed_url}")
         results = []
+        is_reddit = "reddit.com" in self.feed_url.lower()
+
+        if is_reddit:
+            # Nghỉ ngắn và dùng User-Agent chuẩn Reddit API để tránh lỗi 429 Too Many Requests
+            time.sleep(2.5)
+            headers = {'User-Agent': REDDIT_USER_AGENT or 'python:me.buongloi.giveawaybot:v2.1 (by /u/BuongLoi)'}
+        else:
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) GiveawayBot/2.1'}
+
         try:
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) GiveawayBot/2.0'}
             response = requests.get(self.feed_url, headers=headers, timeout=REQUEST_TIMEOUT)
+            if response.status_code == 429 and is_reddit:
+                self.logger.warning(f"Reddit trả về 429 cho {self.feed_url}, đợi 6s rồi thử lại...")
+                time.sleep(6)
+                response = requests.get(self.feed_url, headers=headers, timeout=REQUEST_TIMEOUT)
+
             response.raise_for_status()
 
             if feedparser is not None:

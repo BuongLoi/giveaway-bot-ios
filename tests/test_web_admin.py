@@ -61,7 +61,6 @@ def test_public_endpoints_no_auth_required(client):
 def test_protected_routes_require_auth(client):
     assert client.get("/config").status_code == 401
     assert client.get("/logs").status_code == 401
-    assert client.post("/action/scan").status_code == 401
     # Trang xem danh sách giveaway (GET) mở sẵn cho iOS App / PWA
     assert client.get("/giveaways").status_code == 200
     assert client.get("/").status_code == 200

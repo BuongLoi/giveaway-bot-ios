@@ -1,4 +1,5 @@
 import os
+import time
 import subprocess
 import sqlite3
 import logging
@@ -11,7 +12,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 # Load .env để lấy ADMIN_USERNAME và ADMIN_PASSWORD
 load_dotenv()
 
-# Import cấu hình và tiện ích từ bot
 from bot.config import DB_PATH, SOURCE_ENV_KEYS
 from bot.database import init_db
 from bot.utils import get_python_executable
@@ -22,7 +22,7 @@ app.secret_key = os.getenv("TELEGRAM_BOT_TOKEN") or "giveaway-bot-secret-key"
 
 app.config['BASIC_AUTH_USERNAME'] = os.getenv('ADMIN_USERNAME', 'admin')
 app.config['BASIC_AUTH_PASSWORD'] = os.getenv('ADMIN_PASSWORD', 'changeme123')
-app.config['BASIC_AUTH_FORCE'] = False  # Tự kiểm soát qua before_request để mở /health và /manifest.json
+app.config['BASIC_AUTH_FORCE'] = False
 
 
 class SecureBasicAuth(BasicAuth):
@@ -34,22 +34,23 @@ class SecureBasicAuth(BasicAuth):
         if username != correct_username:
             return False
 
-        # Nếu mật khẩu trong .env đã được hash (bắt đầu bằng pbkdf2: hoặc scrypt:)
         if stored_password.startswith(('pbkdf2:', 'scrypt:')):
             return check_password_hash(stored_password, password)
 
-        # Nếu chưa hash, so sánh plaintext (backward compatible)
         return password == stored_password
 
 
 basic_auth = SecureBasicAuth(app)
 
-PUBLIC_PATHS = {'/', '/giveaways', '/api/giveaways', '/health', '/manifest.json', '/sw.js'}
+PUBLIC_PATHS = {'/', '/giveaways', '/api/giveaways', '/health', '/manifest.json', '/sw.js', '/robots.txt'}
+_last_scan_ts = 0.0
 
 
 @app.before_request
 def require_basic_auth():
-    if request.method == 'GET' and (request.path in PUBLIC_PATHS or request.path.startswith('/static/')):
+    if request.method in ('GET', 'HEAD') and (request.path in PUBLIC_PATHS or request.path.startswith('/static/')):
+        return None
+    if request.method == 'POST' and request.path == '/action/scan':
         return None
     if not basic_auth.authenticate():
         return basic_auth.challenge()
@@ -65,7 +66,6 @@ LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cron.log")
 
 logger = logging.getLogger(__name__)
 
-# Đảm bảo DB đã được khởi tạo và migrate cột mới
 try:
     init_db()
 except Exception as e:
@@ -76,13 +76,13 @@ except Exception as e:
 
 def get_db():
     """Tạo kết nối SQLite tái sử dụng."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=20)
     conn.row_factory = sqlite3.Row
     return conn
 
 
 def get_db_stats():
-    """Lấy thống kê tổng hợp cho Dashboard."""
+    """Lấy thống kê tổng hợp cho Dashboard (chỉ tính các bài hợp lệ)."""
     stats = {
         "total": 0,
         "notified": 0,
@@ -100,7 +100,9 @@ def get_db_stats():
         conn = get_db()
         c = conn.cursor()
 
-        c.execute("SELECT COUNT(*) FROM giveaways")
+        valid_filter = "WHERE (confidence_score > 0 OR (codes != '' AND codes IS NOT NULL))"
+
+        c.execute(f"SELECT COUNT(*) FROM giveaways {valid_filter}")
         stats["total"] = c.fetchone()[0]
 
         c.execute("SELECT COUNT(*) FROM giveaways WHERE notified_at IS NOT NULL")
@@ -109,23 +111,24 @@ def get_db_stats():
         c.execute("SELECT COUNT(*) FROM giveaways WHERE (codes != '' AND codes IS NOT NULL) OR (codes_hash != '' AND codes_hash IS NOT NULL)")
         stats["with_codes"] = c.fetchone()[0]
 
-        c.execute("SELECT COUNT(*) FROM giveaways WHERE platform = 'ios'")
+        c.execute(f"SELECT COUNT(*) FROM giveaways {valid_filter} AND platform = 'ios'")
         stats["ios_count"] = c.fetchone()[0]
 
-        c.execute("SELECT COUNT(*) FROM giveaways WHERE platform = 'windows'")
+        c.execute(f"SELECT COUNT(*) FROM giveaways {valid_filter} AND platform = 'windows'")
         stats["windows_count"] = c.fetchone()[0]
 
-        c.execute("SELECT platform, COUNT(*) FROM giveaways GROUP BY platform")
+        c.execute(f"SELECT platform, COUNT(*) FROM giveaways {valid_filter} GROUP BY platform")
         stats["platforms"] = {row[0] or "other": row[1] for row in c.fetchall()}
 
-        c.execute("SELECT source, COUNT(*) FROM giveaways GROUP BY source ORDER BY COUNT(*) DESC LIMIT 8")
+        c.execute(f"SELECT source, COUNT(*) FROM giveaways {valid_filter} GROUP BY source ORDER BY COUNT(*) DESC LIMIT 8")
         stats["sources"] = c.fetchall()
 
-        # 12 bài mới nhất
-        c.execute("""
+        c.execute(f"""
             SELECT id, source, title, canonical_url, confidence_score,
                    codes, codes_hash, platform, tags, expiry_hint, first_seen_at
-            FROM giveaways ORDER BY first_seen_at DESC LIMIT 12
+            FROM giveaways
+            {valid_filter}
+            ORDER BY first_seen_at DESC LIMIT 12
         """)
         stats["recent"] = [dict(row) for row in c.fetchall()]
 
@@ -149,7 +152,7 @@ def query_giveaways(search: str = "", platform: str = "", page: int = 1, per_pag
         conn = get_db()
         c = conn.cursor()
 
-        conditions = []
+        conditions = ["(confidence_score > 0 OR (codes != '' AND codes IS NOT NULL))"]
         params = []
 
         if search:
@@ -163,7 +166,7 @@ def query_giveaways(search: str = "", platform: str = "", page: int = 1, per_pag
             conditions.append("platform = ?")
             params.append(platform)
 
-        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        where_clause = f"WHERE {' AND '.join(conditions)}"
 
         c.execute(f"SELECT COUNT(*) FROM giveaways {where_clause}", params)
         total = c.fetchone()[0]
@@ -189,14 +192,12 @@ def query_giveaways(search: str = "", platform: str = "", page: int = 1, per_pag
 
 @app.route('/')
 def index():
-    """Dashboard chính: thống kê + bài viết mới nhất."""
     stats = get_db_stats()
     return render_template('index.html', stats=stats)
 
 
 @app.route('/giveaways')
 def giveaways():
-    """Trang xem toàn bộ Giveaway đã thu thập, hỗ trợ lọc nền tảng (iOS/Windows/Game) + search + phân trang."""
     page = request.args.get('page', 1, type=int)
     search = request.args.get('q', '').strip()
     platform = request.args.get('platform', '').strip().lower()
@@ -218,7 +219,6 @@ def giveaways():
 
 @app.route('/api/giveaways')
 def api_giveaways():
-    """REST API JSON phục vụ App iOS / Widget / Mobile."""
     page = request.args.get('page', 1, type=int)
     per_page = min(100, max(1, request.args.get('per_page', 25, type=int)))
     search = request.args.get('q', '').strip()
@@ -241,7 +241,6 @@ def api_giveaways():
 
 @app.route('/config', methods=['GET', 'POST'])
 def config():
-    """Trang cấu hình: đọc/ghi file .env trực tiếp."""
     if request.method == 'POST':
         text_fields = [
             'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'KEYWORDS', 'NEGATIVE_KEYWORDS',
@@ -256,12 +255,11 @@ def config():
                 val = val.strip()
                 if field == 'ADMIN_PASSWORD':
                     if not val:
-                        continue  # Giữ nguyên mật khẩu cũ nếu để trống
+                        continue
                     if not val.startswith(('pbkdf2:', 'scrypt:')):
                         val = generate_password_hash(val)
                 set_key(ENV_PATH, field, val)
 
-        # Xử lý riêng các checkbox nguồn (vì hidden input value="0" đi kèm checkbox value="1")
         for source_key in SOURCE_ENV_KEYS:
             values = request.form.getlist(source_key)
             if values:
@@ -276,7 +274,6 @@ def config():
         flash("Cấu hình đã được lưu thành công!", "success")
         return redirect(url_for('config'))
 
-    # Đọc .env hiện tại
     current_env = {}
     if os.path.exists(ENV_PATH):
         with open(ENV_PATH, 'r', encoding='utf-8') as f:
@@ -291,7 +288,6 @@ def config():
 
 @app.route('/logs')
 def logs():
-    """Trang xem log (200 dòng cuối)."""
     log_content = "Không tìm thấy file cron.log — Bot chưa chạy lần nào hoặc chưa cấu hình cron job."
     if os.path.exists(LOG_PATH):
         with open(LOG_PATH, 'r', encoding='utf-8', errors='replace') as f:
@@ -302,8 +298,21 @@ def logs():
 
 @app.route('/action/scan', methods=['POST'])
 def action_scan():
-    """Nút bấm: chạy quét ngay lập tức (nền)."""
+    """Kích hoạt quét nền có giới hạn tần suất (cooldown 45s) để dùng mượt từ App iOS."""
+    global _last_scan_ts
+    now = time.time()
+    wants_json = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or 'application/json' in request.headers.get('Accept', '')
+
+    if now - _last_scan_ts < 45:
+        wait_sec = int(45 - (now - _last_scan_ts))
+        msg = f"Hệ thống đang quét rồi, vui lòng đợi {wait_sec}s nữa."
+        if wants_json:
+            return jsonify({"status": "cooldown", "message": msg})
+        flash(msg, "success")
+        return redirect(request.referrer or url_for('giveaways'))
+
     try:
+        _last_scan_ts = now
         python_exec = get_python_executable()
         base_dir = os.path.dirname(os.path.abspath(__file__))
         main_py = os.path.join(base_dir, "main.py")
@@ -314,15 +323,25 @@ def action_scan():
                 stdout=log_file,
                 stderr=log_file
             )
-        flash("Đã kích hoạt quét ngay! Kết quả sẽ xuất hiện sau vài chục giây.", "success")
+        msg = "⚡ Đã kích hoạt quét nguồn mới! Kéo xuống để làm mới sau vài giây."
+        if wants_json:
+            return jsonify({"status": "ok", "message": msg})
+        flash(msg, "success")
     except Exception as e:
-        flash(f"Lỗi khi kích hoạt quét: {e}", "danger")
-    return redirect(request.referrer or url_for('index'))
+        err_msg = f"Lỗi khi kích hoạt quét: {e}"
+        if wants_json:
+            return jsonify({"status": "error", "message": err_msg}), 500
+        flash(err_msg, "danger")
+    return redirect(request.referrer or url_for('giveaways'))
+
+
+@app.route('/robots.txt')
+def robots_txt():
+    return Response("User-agent: *\nDisallow: /config\nDisallow: /logs\n", mimetype='text/plain')
 
 
 @app.route('/manifest.json')
 def manifest():
-    """PWA Manifest hỗ trợ cài đặt lên màn hình chính iPhone / iPad."""
     return jsonify({
         "name": "Giveaway Hunter — iOS & PC",
         "short_name": "GiveawayBot",
@@ -345,7 +364,6 @@ def manifest():
 
 @app.route('/sw.js')
 def service_worker():
-    """Service Worker tối giản cho PWA iOS."""
     sw_code = """
 self.addEventListener('install', (e) => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
@@ -356,7 +374,6 @@ self.addEventListener('fetch', (e) => {});
 
 @app.route('/health')
 def health():
-    """Health check endpoint cho monitoring (UptimeRobot, Cloudflare...)."""
     db_ok = os.path.exists(DB_PATH)
     stats = get_db_stats() if db_ok else {}
     return jsonify({

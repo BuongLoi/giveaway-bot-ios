@@ -3,9 +3,7 @@ from typing import List, Tuple
 from bs4 import BeautifulSoup
 
 # Patterns nhận diện key
-# 1. Các khối chữ/số cách nhau bởi dấu gạch ngang (e.g. XXXX-XXXX-XXXX, XXXX-XXXX-XXXX-XXXX, XXXXX-XXXXX-XXXXX)
 KEY_PATTERN = re.compile(r'\b(?:[A-Z0-9]{3,8}[-]){2,5}[A-Z0-9]{3,8}\b', re.IGNORECASE)
-# 2. Chuỗi Alphanumeric liên tiếp dài (10-30 ký tự, chứa cả chữ và số)
 ALNUM_PATTERN = re.compile(r'\b(?=.*[A-Z])(?=.*[0-9])[A-Z0-9]{10,30}\b', re.IGNORECASE)
 
 # Patterns loại trừ False Positive
@@ -28,10 +26,10 @@ CONTEXT_KEYWORDS = [
     'код', 'лицензия', 'промокод', 'ключ'
 ]
 
-# Nguồn chuyên biệt 100% là giveaway/freebie (mọi bài đăng đều là giveaway)
+# Nguồn chuyên biệt 100% là giveaway/freebie (mọi bài đăng đều là giveaway thật)
 DEDICATED_GIVEAWAY_SOURCES = {
     'sharewareonsale', 'giveawayoftheday', 'tickcoupon',
-    'gotd_ios', 'gotd_mac', 'freeappsforme', 'nsane_deals'
+    'gotd_ios', 'gotd_mac', 'freeappsforme'
 }
 
 # Regex kiểm tra tín hiệu Giveaway trên Tiêu đề cho các trang báo công nghệ tổng hợp
@@ -43,7 +41,7 @@ TITLE_GIVEAWAY_REGEX = re.compile(
     re.IGNORECASE
 )
 
-# Mẫu giá giảm về 0 đặc trưng trên r/AppHookup, GiveawayOfTheDay iOS, 9to5Toys (vd: [$4.99 -> Free], ($2.99 → Free))
+# Mẫu giá giảm về 0 đặc trưng trên r/AppHookup, GiveawayOfTheDay iOS, 9to5Toys
 PRICE_FREE_PATTERN = re.compile(
     r'(?:\d+(?:\.\d{1,2})?\s*(?:->|→|--?>|to)\s*(?:free|\$0(?:\.00)?))|'
     r'(?:100%\s*off)|'
@@ -53,9 +51,10 @@ PRICE_FREE_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-# Mẫu nhận diện bài đã hết hạn ngay trên tiêu đề
+# Mẫu nhận diện bài đã hết hạn hoặc bản dùng thử (Demo / Shareware / Trial) ngay trên tiêu đề
 EXPIRED_TITLE_REGEX = re.compile(
-    r'(?:\*expired\*|\[expired\]|\(expired\)|\[ended\]|\bexpired\s*:)',
+    r'(?:\*expired\*|\[expired\]|\(expired\)|\[ended\]|\bexpired\s*:|'
+    r'\(demo\)|\(shareware\)|\(trial\)|\(time-limited\s+trial\))',
     re.IGNORECASE
 )
 
@@ -94,8 +93,6 @@ def is_excluded(text: str) -> bool:
         if pattern.search(text):
             return True
 
-    # Nếu là chuỗi liền không có dấu gạch ngang, yêu cầu phải có ít nhất 2 chữ IN HOA
-    # và không có chữ thường để tránh bắt nhầm tên riêng/từ tiếng Anh có số (vd: Glasscribe1, kiririn51...)
     if '-' not in text:
         if any(c.islower() for c in text):
             return True
@@ -103,7 +100,6 @@ def is_excluded(text: str) -> bool:
         if upper_count < 2:
             return True
 
-    # Nếu có dấu gạch ngang (vd: word-word-123), loại bỏ nếu chứa chữ thường (slug URL / tên bài)
     if '-' in text:
         if any(c.islower() for c in text):
             return True
@@ -126,7 +122,7 @@ def calculate_confidence(code: str, full_text: str) -> int:
         for kw in CONTEXT_KEYWORDS:
             if kw in context_str:
                 score += 50
-                break  # Chỉ tính 1 lần nếu có bất kỳ từ nào
+                break
     return score
 
 
@@ -144,12 +140,10 @@ def extract_codes(html_content: str) -> Tuple[List[str], int]:
 
     found_codes = []
 
-    # 1. Tìm kiếm định dạng XXXX-XXXX-XXXX
     for m in KEY_PATTERN.findall(full_search_text):
         if not is_excluded(m) and m not in found_codes:
             found_codes.append(m)
 
-    # 2. Tìm kiếm định dạng Alphanumeric liền (chữ IN HOA + số)
     for m in ALNUM_PATTERN.findall(full_search_text):
         if not is_excluded(m) and m not in found_codes:
             found_codes.append(m)
@@ -165,9 +159,6 @@ def extract_codes(html_content: str) -> Tuple[List[str], int]:
 def is_relevant_giveaway(title: str, content_text: str, source: str = "", codes: List[str] = None) -> bool:
     """
     Kiểm tra bài viết có thực sự là bài Giveaway / Free App / Deal miễn phí hay không.
-    - Với nguồn chuyên giveaway (SharewareOnSale, GOTD, TickCoupon, r/AppHookup...): luôn hợp lệ.
-    - Với trang báo công nghệ tổng hợp (Ghacks, BetaNews, iDownloadBlog...): bắt buộc Tiêu đề phải có
-      từ khóa giveaway/freebie hoặc trích xuất được mã code hợp lệ.
     """
     title_str = title or ""
     if EXPIRED_TITLE_REGEX.search(title_str):
@@ -203,30 +194,34 @@ def evaluate_article_confidence(
     Đánh giá độ tin cậy tổng thể (0 - 100) của bài Giveaway (hỗ trợ cả phần mềm có key và App iOS miễn phí trực tiếp).
     """
     score = code_score
-    combined = f"{title} {content_text}".lower()
+    title_str = title or ""
+    combined = f"{title_str} {content_text}".lower()
     link_lower = (link or "").lower()
     source_lower = (source or "").lower()
+
+    if EXPIRED_TITLE_REGEX.search(title_str):
+        return 0
 
     if codes:
         has_dashed_key = any('-' in c for c in codes)
         if has_dashed_key and score >= 50:
             score = max(score, 85)
         elif has_dashed_key:
-            score = max(score, 45)
+            score = max(score, 50)
 
     # Nếu là deal giảm giá 100% / Apps Gone Free (đặc thù của iOS App Store & r/AppHookup)
     if PRICE_FREE_PATTERN.search(combined):
         score = max(score, 80)
 
-    # Nếu đến từ nguồn iOS/Mac GiveawayOfTheDay hoặc link App Store miễn phí
+    # Nguồn chuyên giveaway 100% (SharewareOnSale, GOTD PC/iOS/Mac, TickCoupon, FreeAppsForMe)
     if source_lower in ("gotd_ios", "gotd_mac"):
         score = max(score, 85)
+    elif source_lower in DEDICATED_GIVEAWAY_SOURCES:
+        score = max(score, 75)
     elif ("apps.apple.com" in link_lower or "apps.apple.com" in combined) and TITLE_GIVEAWAY_REGEX.search(combined):
         score = max(score, 75)
-
-    # Nếu đến từ nguồn chuyên giveaway uy tín và tiêu đề có chữ free / giveaway / license
-    if source_lower in DEDICATED_GIVEAWAY_SOURCES and TITLE_GIVEAWAY_REGEX.search(title or ""):
-        score = max(score, 70)
+    elif TITLE_GIVEAWAY_REGEX.search(title_str):
+        score = max(score, 60)
 
     return min(100, score)
 
@@ -272,20 +267,17 @@ def detect_platform(title: str, content_text: str = "", link: str = "", source: 
     link_lower = (link or "").lower()
     combined_lower = f"{title_lower} {link_lower} {(content_text or '')[:600].lower()}"
 
-    # 1. Nguồn chuyên biệt cố định nền tảng
     if source_lower == "gotd_ios":
         return "ios"
     if source_lower == "gotd_mac":
         return "macos"
 
-    # 2. Kiểm tra ngay trên tiêu đề + link (chính xác nhất)
     title_and_link = f"{title_lower} {link_lower}"
     for platform, keywords in PLATFORM_RULES:
         for kw in keywords:
             if kw in title_and_link:
                 return platform
 
-    # 3. Kiểm tra theo nhóm nguồn
     if source_lower in IOS_SOURCES:
         return "ios"
     if source_lower in MAC_SOURCES:
@@ -293,13 +285,11 @@ def detect_platform(title: str, content_text: str = "", link: str = "", source: 
     if source_lower in GAME_SOURCES:
         return "game"
 
-    # 4. Kiểm tra trong đoạn đầu nội dung
     for platform, keywords in PLATFORM_RULES:
         for kw in keywords:
             if kw in combined_lower:
                 return platform
 
-    # Mặc định các nguồn phần mềm PC truyền thống là windows
     if source_lower in {"sharewareonsale", "giveawayoftheday", "tickcoupon", "comss", "nsane_deals"}:
         return "windows"
 
@@ -357,10 +347,7 @@ TAG_RULES = [
 
 
 def classify_giveaway(title: str, content_text: str) -> list:
-    """
-    Phân loại bài viết dựa trên từ khóa.
-    Trả về danh sách các tag phù hợp. Ví dụ: ['🍎 iOS APP', '🎁 GIVEAWAY']
-    """
+    """Phân loại bài viết dựa trên từ khóa."""
     combined = f"{title} {content_text}".lower()
     tags = []
     for rule in TAG_RULES:
@@ -385,9 +372,7 @@ EXPIRY_PATTERNS = [
 
 
 def detect_expiry_hint(title: str, content_text: str) -> str:
-    """
-    Phát hiện gợi ý về thời hạn hết hạn từ tiêu đề và nội dung.
-    """
+    """Phát hiện gợi ý về thời hạn hết hạn từ tiêu đề và nội dung."""
     combined = f"{title} {content_text}"
     for pattern in EXPIRY_PATTERNS:
         match = pattern.search(combined)

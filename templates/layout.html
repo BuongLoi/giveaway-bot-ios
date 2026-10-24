@@ -17,12 +17,13 @@
 <body>
     <!-- Top Desktop / Tablet Navbar -->
     <nav class="navbar">
-        <a href="/" class="nav-brand">🎁 GiveawayHunter</a>
+        <a href="/giveaways" class="nav-brand">🎁 GiveawayHunter</a>
         <div class="nav-links">
-            <a href="/" {% if request.path == '/' %}class="active"{% endif %}>📊 Tổng quan</a>
             <a href="/giveaways" {% if request.path == '/giveaways' and not request.args.get('platform') %}class="active"{% endif %}>📦 Tất cả</a>
             <a href="/giveaways?platform=ios" {% if request.args.get('platform') == 'ios' %}class="active"{% endif %}>🍎 iOS Free</a>
             <a href="/giveaways?platform=windows" {% if request.args.get('platform') == 'windows' %}class="active"{% endif %}>🪟 Windows</a>
+            <a href="/giveaways?platform=game" {% if request.args.get('platform') == 'game' %}class="active"{% endif %}>🎮 Game</a>
+            <a href="/" {% if request.path == '/' %}class="active"{% endif %}>📊 Thống kê</a>
             <a href="/config" {% if request.path == '/config' %}class="active"{% endif %}>⚙️ Cấu hình</a>
             <a href="/logs" {% if request.path == '/logs' %}class="active"{% endif %}>📜 Logs</a>
         </div>
@@ -40,7 +41,7 @@
         {% block content %}{% endblock %}
     </div>
 
-    <!-- iOS Style Bottom Tab Bar (Mobile / PWA) -->
+    <!-- iOS Style Bottom Tab Bar (Mobile / PWA / iOS App) -->
     <nav class="ios-tabbar">
         <a href="/giveaways" class="tab-item {% if request.path == '/giveaways' and not request.args.get('platform') %}active{% endif %}" onclick="triggerHaptic('selection')">
             <span class="tab-icon">🎁</span>
@@ -54,13 +55,13 @@
             <span class="tab-icon">🪟</span>
             <span class="tab-label">Windows</span>
         </a>
+        <a href="/giveaways?platform=game" class="tab-item {% if request.args.get('platform') == 'game' %}active{% endif %}" onclick="triggerHaptic('selection')">
+            <span class="tab-icon">🎮</span>
+            <span class="tab-label">Game</span>
+        </a>
         <a href="/" class="tab-item {% if request.path == '/' %}active{% endif %}" onclick="triggerHaptic('selection')">
             <span class="tab-icon">📊</span>
             <span class="tab-label">Thống kê</span>
-        </a>
-        <a href="/config" class="tab-item {% if request.path == '/config' %}active{% endif %}" onclick="triggerHaptic('selection')">
-            <span class="tab-icon">⚙️</span>
-            <span class="tab-label">Cài đặt</span>
         </a>
     </nav>
 
@@ -83,7 +84,7 @@
             t.textContent = msg;
             t.classList.add('show');
             clearTimeout(window._toastTimer);
-            window._toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+            window._toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
         }
 
         function copyCode(codeText, btnEl) {
@@ -106,6 +107,37 @@
                 btnEl.innerHTML = '✅ Đã chép';
                 setTimeout(() => { btnEl.innerHTML = orig; }, 1500);
             }
+        }
+
+        function triggerScan(event, btnEl) {
+            if (event) event.preventDefault();
+            triggerHaptic('medium');
+            if (btnEl) {
+                btnEl.disabled = true;
+                btnEl.innerHTML = '⏳ Đang quét...';
+            }
+            fetch('/action/scan', {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+            })
+            .then(r => r.json())
+            .then(data => {
+                showToast(data.message || '⚡ Đã kích hoạt quét!');
+                setTimeout(() => {
+                    if (btnEl) {
+                        btnEl.disabled = false;
+                        btnEl.innerHTML = '⚡ Quét mới';
+                    }
+                }, 3000);
+            })
+            .catch(() => {
+                showToast('⚡ Đã gửi lệnh quét!');
+                if (btnEl) {
+                    btnEl.disabled = false;
+                    btnEl.innerHTML = '⚡ Quét mới';
+                }
+            });
+            return false;
         }
 
         if ('serviceWorker' in navigator) {

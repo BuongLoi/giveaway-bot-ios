@@ -5,8 +5,8 @@
 <div class="card">
     <div class="card-title" style="justify-content: space-between; flex-wrap: wrap; gap: 0.75rem;">
         <span><span class="icon">🎁</span> Kho Giveaway ({{ total }} mục)</span>
-        <form method="POST" action="/action/scan" style="margin:0;">
-            <button type="submit" class="btn btn-sm btn-success" onclick="triggerHaptic('medium')">⚡ Quét mới</button>
+        <form method="POST" action="/action/scan" style="margin:0;" onsubmit="return triggerScan(event, this.querySelector('button'));">
+            <button type="submit" class="btn btn-sm btn-success">⚡ Quét mới</button>
         </form>
     </div>
 

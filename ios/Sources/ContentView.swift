@@ -11,16 +11,19 @@ struct ContentView: View {
     @State private var showServerConfig = false
     @State private var draftURL: String = ""
 
-    private let bgDark = Color(red: 0.059, green: 0.090, blue: 0.165) // #0f172a
+    private let bgDark = Color(red: 0.059, green: 0.090, blue: 0.165)     // #0f172a
+    private let blueAccent = Color(red: 0.231, green: 0.510, blue: 0.965) // #3b82f6
+    private let purpleAccent = Color(red: 0.659, green: 0.333, blue: 0.969) // #a855f7
 
     var targetURL: URL {
-        URL(string: serverURLString.trimmingCharacters(in: .whitespacesAndNewlines))
-            ?? URL(string: "https://giveaway.buongloi.live/giveaways")!
+        let cleaned = serverURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        return URL(string: cleaned) ?? URL(string: "https://giveaway.buongloi.live/giveaways")!
     }
 
     var body: some View {
         ZStack(alignment: .top) {
-            bgDark.ignoresSafeArea()
+            bgDark
+                .ignoresSafeArea(.all)
 
             GiveawayWebViewContainer(
                 url: targetURL,
@@ -31,17 +34,13 @@ struct ContentView: View {
             )
             .ignoresSafeArea(.keyboard, edges: .bottom)
 
-            // Thanh tiến trình tải trang Gradient
+            // Top loading progress bar
             if isLoading && estimatedProgress < 1.0 {
                 GeometryReader { geo in
                     Rectangle()
                         .fill(
                             LinearGradient(
-                                gradient: Gradient(colors: [
-                                    Color(red: 0.23, green: 0.51, blue: 0.96),
-                                    Color(red: 0.66, green: 0.33, blue: 0.97),
-                                    Color(red: 0.96, green: 0.62, blue: 0.04)
-                                ]),
+                                gradient: Gradient(colors: [blueAccent, purpleAccent]),
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
@@ -52,114 +51,116 @@ struct ContentView: View {
                 .frame(height: 3)
             }
 
-            // Nút nhỏ cấu hình đổi URL máy chủ (Góc phải trên)
-            HStack {
-                Spacer()
-                Button(action: {
-                    draftURL = serverURLString
-                    showServerConfig = true
-                }) {
-                    Image(systemName: "server.rack")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.75))
-                        .padding(8)
-                        .background(Color.black.opacity(0.35))
-                        .clipShape(Circle())
-                }
-                .padding(.top, 6)
-                .padding(.trailing, 12)
-            }
-
-            // Màn hình Splash ban đầu
-            if isLoading && estimatedProgress < 0.25 {
+            // Initial Splash Screen
+            if isLoading && estimatedProgress < 0.28 {
                 VStack(spacing: 16) {
-                    Text("🎁")
-                        .font(.system(size: 52))
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [blueAccent, purpleAccent],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 68, height: 68)
+                            .shadow(color: blueAccent.opacity(0.35), radius: 14, x: 0, y: 6)
 
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: Color(red: 0.38, green: 0.65, blue: 0.98)))
-                        .scaleEffect(1.25)
+                        Text("🎁")
+                            .font(.system(size: 34))
+                    }
 
                     Text("Giveaway Hunter")
-                        .font(.system(size: 21, weight: .bold, design: .rounded))
+                        .font(.system(size: 20, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
 
-                    Text("Săn App iOS & Phần mềm Bản quyền Miễn phí")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(Color(white: 0.65))
+                    Text("iOS Freebies • Windows License • Deals")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(Color(white: 0.62))
+
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: blueAccent))
+                        .scaleEffect(1.2)
+                        .padding(.top, 6)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(bgDark)
+                .ignoresSafeArea(.all)
                 .transition(.opacity)
             }
 
-            // Màn hình lỗi kết nối + Đổi địa chỉ Server ngay trong App
+            // Offline / Connection Error View
             if loadFailed {
-                VStack(spacing: 18) {
+                VStack(spacing: 20) {
                     Image(systemName: "wifi.exclamationmark")
-                        .font(.system(size: 50))
-                        .foregroundColor(Color(red: 0.96, green: 0.62, blue: 0.04))
+                        .font(.system(size: 52))
+                        .foregroundColor(blueAccent)
 
-                    Text("Chưa Thể Kết Nối Máy Chủ")
-                        .font(.system(size: 18, weight: .bold))
+                    Text("Không thể kết nối máy chủ")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
                         .foregroundColor(.white)
 
-                    Text("Địa chỉ hiện tại: \(serverURLString)")
-                        .font(.caption)
-                        .foregroundColor(Color(white: 0.65))
+                    Text("Vui lòng kiểm tra lại kết nối Internet hoặc trạng thái máy chủ giveaway.buongloi.live.")
+                        .font(.subheadline)
+                        .foregroundColor(Color(white: 0.68))
                         .multilineTextAlignment(.center)
-                        .padding(.horizontal, 28)
+                        .padding(.horizontal, 32)
 
                     HStack(spacing: 12) {
                         Button(action: {
+                            let impact = UIImpactFeedbackGenerator(style: .medium)
+                            impact.impactOccurred()
                             loadFailed = false
                             isLoading = true
                             reloadToken = UUID()
                         }) {
-                            Label("Thử Lại", systemImage: "arrow.clockwise")
-                                .font(.system(size: 14, weight: .bold))
+                            Label("Thử lại ngay", systemImage: "arrow.clockwise")
+                                .font(.system(size: 15, weight: .bold))
                                 .foregroundColor(.white)
-                                .padding(.horizontal, 22)
+                                .padding(.horizontal, 24)
                                 .padding(.vertical, 12)
                                 .background(
                                     LinearGradient(
-                                        colors: [Color(red: 0.23, green: 0.51, blue: 0.96), Color(red: 0.55, green: 0.36, blue: 0.96)],
+                                        colors: [blueAccent, purpleAccent],
                                         startPoint: .topLeading,
                                         endPoint: .bottomTrailing
                                     )
                                 )
-                                .cornerRadius(20)
+                                .cornerRadius(24)
                         }
 
                         Button(action: {
                             draftURL = serverURLString
                             showServerConfig = true
                         }) {
-                            Label("Đổi URL Server", systemImage: "gearshape.fill")
-                                .font(.system(size: 14, weight: .semibold))
+                            Label("Đổi URL", systemImage: "gearshape.fill")
+                                .font(.system(size: 15, weight: .semibold))
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 18)
                                 .padding(.vertical, 12)
                                 .background(Color.white.opacity(0.12))
-                                .cornerRadius(20)
+                                .cornerRadius(24)
                         }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(bgDark)
+                .ignoresSafeArea(.all)
+                .transition(.opacity)
             }
         }
+        .animation(.easeInOut(duration: 0.25), value: isLoading)
         .sheet(isPresented: $showServerConfig) {
             NavigationView {
                 Form {
-                    Section(header: Text("Địa chỉ Máy chủ Giveaway Bot (VPS / Cloudflare Tunnel)")) {
+                    Section(header: Text("Địa chỉ Máy chủ Giveaway Bot")) {
                         TextField("https://giveaway.buongloi.live/giveaways", text: $draftURL)
                             .keyboardType(.URL)
                             .autocapitalization(.none)
                             .disableAutocorrection(true)
                     }
-                    Section(footer: Text("Ví dụ: http://103.x.x.x:5000/giveaways hoặc https://giveaway.buongloi.live/giveaways")) {
-                        Button("Lưu & Kết nối ngay") {
+                    Section {
+                        Button("Lưu & Kết nối lại") {
                             let cleaned = draftURL.trimmingCharacters(in: .whitespacesAndNewlines)
                             if !cleaned.isEmpty {
                                 serverURLString = cleaned
@@ -169,9 +170,16 @@ struct ContentView: View {
                                 reloadToken = UUID()
                             }
                         }
+                        Button("Khôi phục mặc định (giveaway.buongloi.live)") {
+                            serverURLString = "https://giveaway.buongloi.live/giveaways"
+                            showServerConfig = false
+                            loadFailed = false
+                            isLoading = true
+                            reloadToken = UUID()
+                        }
                     }
                 }
-                .navigationTitle("Cấu hình Máy chủ")
+                .navigationTitle("Cài đặt Máy chủ")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
@@ -184,6 +192,7 @@ struct ContentView: View {
     }
 }
 
+// MARK: - WKWebView Wrapper
 struct GiveawayWebViewContainer: UIViewRepresentable {
     let url: URL
     @Binding var isLoading: Bool
@@ -198,138 +207,139 @@ struct GiveawayWebViewContainer: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
+        config.defaultWebpagePreferences.allowsContentJavaScript = true
+        config.websiteDataStore = WKWebsiteDataStore.default()
+        config.applicationNameForUserAgent = "GiveawayHunterApp/2.1 (iOS)"
 
-        let contentController = WKUserContentController()
-        contentController.add(context.coordinator, name: "haptic")
-        config.userContentController = contentController
+        let userContentController = WKUserContentController()
+        userContentController.add(context.coordinator, name: "haptic")
+        config.userContentController = userContentController
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
-        webView.isOpaque = false
-        let bg = UIColor(red: 0.059, green: 0.090, blue: 0.165, alpha: 1.0)
-        webView.backgroundColor = bg
-        webView.scrollView.backgroundColor = bg
+        webView.allowsBackForwardNavigationGestures = true
+        webView.scrollView.bounces = true
 
-        // Pull to refresh
+        let darkColor = UIColor(red: 0.059, green: 0.090, blue: 0.165, alpha: 1.0)
+        webView.backgroundColor = darkColor
+        webView.isOpaque = false
+        webView.scrollView.backgroundColor = darkColor
+        webView.scrollView.contentInsetAdjustmentBehavior = .always
+
+        // Pull-to-Refresh
         let refreshControl = UIRefreshControl()
-        refreshControl.tintColor = UIColor(red: 0.38, green: 0.65, blue: 0.98, alpha: 1.0)
+        refreshControl.tintColor = UIColor(red: 0.231, green: 0.510, blue: 0.965, alpha: 0.95)
         refreshControl.addTarget(context.coordinator, action: #selector(Coordinator.handleRefresh(_:)), for: .valueChanged)
         webView.scrollView.refreshControl = refreshControl
 
-        context.coordinator.setupObservation(for: webView)
+        // Observe loading progress
+        context.coordinator.observation = webView.observe(\.estimatedProgress, options: [.new]) { wv, _ in
+            DispatchQueue.main.async {
+                self.progress = wv.estimatedProgress
+            }
+        }
 
-        let request = URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 20)
+        context.coordinator.webView = webView
+        let request = URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 25)
         webView.load(request)
-
         return webView
     }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {
+    func updateUIView(_ webView: WKWebView, context: Context) {
         if context.coordinator.lastReloadToken != reloadToken {
             context.coordinator.lastReloadToken = reloadToken
-            let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
-            uiView.load(request)
+            let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 25)
+            webView.load(request)
         }
     }
 
     class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         var parent: GiveawayWebViewContainer
-        var lastReloadToken: UUID?
-        private var progressObservation: NSKeyValueObservation?
         weak var webView: WKWebView?
+        var observation: NSKeyValueObservation?
+        var lastReloadToken: UUID?
 
         init(_ parent: GiveawayWebViewContainer) {
             self.parent = parent
             self.lastReloadToken = parent.reloadToken
         }
 
-        func setupObservation(for webView: WKWebView) {
-            self.webView = webView
-            progressObservation = webView.observe(\.estimatedProgress, options: [.new]) { [weak self] wv, _ in
-                DispatchQueue.main.async {
-                    self?.parent.progress = wv.estimatedProgress
-                }
-            }
+        deinit {
+            observation?.invalidate()
         }
 
         @objc func handleRefresh(_ sender: UIRefreshControl) {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            let impact = UIImpactFeedbackGenerator(style: .light)
+            impact.impactOccurred()
             webView?.reload()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
-                sender.endRefreshing()
+        }
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            if message.name == "haptic" {
+                let impact = UIImpactFeedbackGenerator(style: .light)
+                impact.impactOccurred()
             }
         }
 
-        // Mở thẳng App Store hoặc Safari khi bấm vào link nhận quà bên ngoài
-        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            if let reqURL = navigationAction.request.url,
-               let host = reqURL.host?.lowercased() {
-                if host.contains("apps.apple.com") || host.contains("itunes.apple.com") {
-                    UIApplication.shared.open(reqURL)
-                    decisionHandler(.cancel)
-                    return
-                }
-                if navigationAction.targetFrame == nil {
-                    UIApplication.shared.open(reqURL)
-                    decisionHandler(.cancel)
-                    return
-                }
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            DispatchQueue.main.async {
+                self.parent.isLoading = true
+                self.parent.loadFailed = false
             }
-            decisionHandler(.allow)
         }
 
-        func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-            if let reqURL = navigationAction.request.url {
-                UIApplication.shared.open(reqURL)
-            }
-            return nil
-        }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
             DispatchQueue.main.async {
                 self.parent.isLoading = false
                 self.parent.loadFailed = false
             }
         }
 
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            DispatchQueue.main.async {
+                self.parent.isLoading = false
+                self.parent.loadFailed = false
+                webView.scrollView.refreshControl?.endRefreshing()
+            }
+        }
+
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            handleError(error)
+            let nsError = error as NSError
+            if nsError.code == NSURLErrorCancelled || (nsError.domain == "WebKitErrorDomain" && nsError.code == 102) {
+                return
+            }
+            DispatchQueue.main.async {
+                self.parent.isLoading = false
+                webView.scrollView.refreshControl?.endRefreshing()
+            }
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            handleError(error)
-        }
-
-        private func handleError(_ error: Error) {
             let nsError = error as NSError
-            if nsError.code == NSURLErrorCancelled { return }
+            if nsError.code == NSURLErrorCancelled || (nsError.domain == "WebKitErrorDomain" && nsError.code == 102) {
+                return
+            }
             DispatchQueue.main.async {
                 self.parent.isLoading = false
                 self.parent.loadFailed = true
+                webView.scrollView.refreshControl?.endRefreshing()
             }
         }
 
-        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            if message.name == "haptic", let dict = message.body as? [String: Any] {
-                let type = dict["type"] as? String ?? "light"
-                DispatchQueue.main.async {
-                    switch type {
-                    case "selection":
-                        UISelectionFeedbackGenerator().selectionChanged()
-                    case "medium":
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    case "heavy":
-                        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-                    default:
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    }
-                }
-            }
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            webView.reload()
         }
 
-        deinit {
-            progressObservation?.invalidate()
+        // Mở các link target="_blank" (App Store, trang nhận bản quyền ngoài) bằng Safari / App Store của iOS
+        func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+            guard let targetURL = navigationAction.request.url else { return nil }
+            if let host = targetURL.host?.lowercased(), host.contains("buongloi.live") {
+                webView.load(navigationAction.request)
+            } else {
+                UIApplication.shared.open(targetURL, options: [:], completionHandler: nil)
+            }
+            return nil
         }
     }
 }

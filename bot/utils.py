@@ -9,33 +9,40 @@ from logging.handlers import RotatingFileHandler
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOG_FILE = os.path.join(PROJECT_ROOT, "cron.log")
 
+
 def setup_logging(verbose: bool = False):
     """
     Thiết lập logging với RotatingFileHandler.
-    - Giới hạn mỗi file log tối đa 5MB
-    - Giữ lại 3 file log cũ (cron.log, cron.log.1, cron.log.2, cron.log.3)
-    - Tổng dung lượng tối đa: ~20MB
+    - Tránh ghi trùng 2 lần mỗi dòng nếu stdout đã được cron redirect vào cron.log.
     """
     level = logging.DEBUG if verbose else logging.INFO
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-    # Console handler
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
+    handlers = []
 
     # File handler với log rotation (5MB x 3 backup)
     file_handler = RotatingFileHandler(
         LOG_FILE,
-        maxBytes=5 * 1024 * 1024,  # 5MB mỗi file
-        backupCount=3,             # Giữ 3 file cũ
+        maxBytes=5 * 1024 * 1024,
+        backupCount=3,
         encoding='utf-8'
     )
     file_handler.setFormatter(formatter)
+    handlers.append(file_handler)
+
+    # Chỉ thêm StreamHandler nếu đang chạy trực tiếp trên terminal (TTY)
+    # để khi cron chạy `>> cron.log 2>&1` không bị ghi đè gấp đôi từng dòng
+    if sys.stdout and hasattr(sys.stdout, "isatty") and sys.stdout.isatty():
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        handlers.append(console_handler)
 
     logging.basicConfig(
         level=level,
-        handlers=[console_handler, file_handler]
+        handlers=handlers,
+        force=True
     )
+
 
 def generate_hash(content: str) -> str:
     """Tạo mã băm MD5 cho nội dung văn bản."""
@@ -43,11 +50,13 @@ def generate_hash(content: str) -> str:
         return ""
     return hashlib.md5(content.encode('utf-8')).hexdigest()
 
+
 def escape_html(text: str) -> str:
     """Escape các ký tự HTML đặc biệt để gửi qua Telegram parse_mode=HTML một cách an toàn."""
     if not text:
         return ""
     return html.escape(text, quote=False)
+
 
 def get_python_executable() -> str:
     """

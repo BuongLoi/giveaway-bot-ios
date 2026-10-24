@@ -39,7 +39,7 @@ def get_all_sources():
         RSSSource("betanews", "https://betanews.com/feed/", SOURCES_CONFIG.get("betanews", True)),
         RSSSource("softpedia", "https://www.softpedia.com/backend.xml", SOURCES_CONFIG.get("softpedia", True)),
         RSSSource("digitaltrends", "https://www.digitaltrends.com/computing/feed/", SOURCES_CONFIG.get("digitaltrends", True)),
-        RSSSource("makeuseof", "https://www.makeuseof.com/feed/", SOURCES_CONFIG.get("makeuseof", True)),
+        RSSSource("makeuseof", "https://makeuseof.com/feed/", SOURCES_CONFIG.get("makeuseof", True)),
 
         # ── Cộng đồng & diễn đàn ──
         RSSSource("nsane_deals", "https://nsaneforums.com/forum/48-promotions-and-deals.xml/", SOURCES_CONFIG.get("nsane_deals", True)),
@@ -52,7 +52,6 @@ def get_all_sources():
         RSSSource("steam_newreleases", "https://store.steampowered.com/feeds/newreleases.xml", SOURCES_CONFIG.get("steam_newreleases", True)),
     ]
 
-    # Reddit: Nếu có REDDIT_CLIENT_ID thì dùng PRAW, nếu không dùng Multireddit RSS (chống lỗi 429)
     reddit_enabled = SOURCES_CONFIG.get("reddit_rss", True)
     if REDDIT_CLIENT_ID:
         for sub in ['AppHookup', 'iphoneapps', 'iosgaming', 'macapps', 'FreeGameFindings', 'eFreebies', 'giveaways', 'software', 'PromoCode']:
@@ -73,10 +72,8 @@ def get_all_sources():
 
 
 def contains_keywords(text: str) -> bool:
-    """Kiểm tra nếu bài viết chứa bất kỳ từ khóa nào được yêu cầu."""
     if not KEYWORDS:
-        return True  # Không cấu hình từ khóa -> lấy hết
-
+        return True
     text_lower = text.lower()
     for kw in KEYWORDS:
         if kw in text_lower:
@@ -85,7 +82,6 @@ def contains_keywords(text: str) -> bool:
 
 
 def contains_negative_keywords(text: str) -> bool:
-    """Kiểm tra nếu bài viết chứa từ khóa loại trừ (sẽ bị bỏ qua)."""
     if not NEGATIVE_KEYWORDS:
         return False
     text_lower = text.lower()
@@ -105,40 +101,43 @@ def process_giveaway(source_name: str, item: dict, dry_run: bool, backfill: bool
     if not title or not link:
         return
 
-    # Rút trích text sạch
     clean_text = extract_text_from_html(content_html)
-
-    # Trích xuất mã code
     codes, code_confidence = extract_codes(content_html)
 
-    # Lọc theo keyword cấu hình
     if not contains_keywords(clean_text) and not contains_keywords(title):
         logger.debug(f"[{source_name}] Bỏ qua vì không chứa từ khóa cấu hình: {title}")
         return
 
-    # Lọc theo negative keywords (loại trừ bài không liên quan)
     if contains_negative_keywords(clean_text) or contains_negative_keywords(title):
         logger.debug(f"[{source_name}] Bỏ qua vì chứa từ khóa loại trừ: {title}")
         return
 
-    # Lọc độ liên quan: bỏ qua các bài báo tin tức thông thường không phải giveaway/free app
     if not is_relevant_giveaway(title, clean_text, source_name, codes):
         logger.debug(f"[{source_name}] Bỏ qua vì không phải bài giveaway/freebie: {title}")
         return
 
-    # Phase 2: Fallback Scraper nếu không có code, nội dung RSS ngắn (< 300 char) và không phải trang Reddit
-    if len(codes) == 0 and ENABLE_FALLBACK_SCRAPER and len(clean_text) < 300 and "reddit.com" not in link.lower():
+    # Phase 2: Fallback Scraper nếu không có code, nội dung RSS ngắn (< 300 char) và không phải trang cấm robots
+    skip_scrape_domains = ("reddit.com", "nsaneforums.com")
+    if len(codes) == 0 and ENABLE_FALLBACK_SCRAPER and len(clean_text) < 300 and not any(d in link.lower() for d in skip_scrape_domains):
         logger.info(f"[{source_name}] RSS thiếu nội dung/code, thử cào HTML gốc: {link}")
         full_html = fetch_html_content(link)
         if full_html:
             clean_text = extract_text_from_html(full_html)
             codes, code_confidence = extract_codes(full_html)
 
-    # Phân loại nền tảng, nhãn, thời hạn & điểm tin cậy tổng hợp
     platform = detect_platform(title, clean_text, link, source_name)
     tags = classify_giveaway(title, clean_text)
     expiry = detect_expiry_hint(title, clean_text)
     confidence = evaluate_article_confidence(title, clean_text, codes, code_confidence, link, source_name)
+
+    # Chặn lưu rác: nếu không có code và điểm tin cậy = 0 (hoặc dưới ngưỡng tối thiểu), bỏ qua ngay trước khi ghi DB
+    if confidence == 0 and not codes:
+        logger.debug(f"[{source_name}] Bỏ qua bài có confidence=0 và không có code: {title}")
+        return
+
+    if MIN_CONFIDENCE_SCORE > 0 and confidence < MIN_CONFIDENCE_SCORE:
+        logger.debug(f"[{source_name}] Bỏ qua vì confidence ({confidence}) < MIN ({MIN_CONFIDENCE_SCORE}): {title}")
+        return
 
     sorted_codes = sorted(codes)
     codes_str = ", ".join(sorted_codes)
@@ -146,7 +145,6 @@ def process_giveaway(source_name: str, item: dict, dry_run: bool, backfill: bool
     content_hash = generate_hash(clean_text)
     codes_hash = generate_hash(",".join(sorted_codes))
 
-    # Lưu vào database
     db_result = check_and_save_giveaway(
         source=source_name,
         canonical_url=link,
@@ -171,17 +169,10 @@ def process_giveaway(source_name: str, item: dict, dry_run: bool, backfill: bool
 
     logger.info(f"[{source_name}] [{platform.upper()}] {action.upper()} - {title} - Codes: {len(codes)} - Confidence: {confidence}")
 
-    # Nếu chạy chế độ backfill, đánh dấu đã xử lý để lần chạy sau không gửi bù hàng loạt
     if backfill:
         mark_as_notified(record_id)
         return
 
-    # Lọc theo điểm tin cậy tối thiểu
-    if MIN_CONFIDENCE_SCORE > 0 and confidence < MIN_CONFIDENCE_SCORE:
-        logger.debug(f"[{source_name}] Bỏ qua gửi TG vì confidence ({confidence}) < MIN ({MIN_CONFIDENCE_SCORE}): {title}")
-        return
-
-    # Gửi Telegram
     platform_badge = get_platform_badge(platform)
     safe_title = escape_html(title)
     safe_link = escape_html(link)
