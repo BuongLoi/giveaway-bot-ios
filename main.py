@@ -64,7 +64,7 @@ def get_all_sources():
         ))
         sources.append(RSSSource(
             "reddit_pc",
-            "https://www.reddit.com/r/FreeGameFindings+eFreebies+giveaways+PromoCode+software/new.rss",
+            "https://www.reddit.com/r/FreeGameFindings+Freegamestuff+eFreebies+giveaways/new.rss",
             reddit_enabled
         ))
 

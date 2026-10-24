@@ -51,10 +51,12 @@ PRICE_FREE_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-# Mẫu nhận diện bài đã hết hạn hoặc bản dùng thử (Demo / Shareware / Trial) ngay trên tiêu đề
+# Mẫu nhận diện bài đã hết hạn, bản dùng thử (Demo/Shareware/Trial) hoặc deal giảm giá một phần ("50% Off", "80% discount", "for just $X")
 EXPIRED_TITLE_REGEX = re.compile(
     r'(?:\*expired\*|\[expired\]|\(expired\)|\[ended\]|\bexpired\s*:|'
-    r'\(demo\)|\(shareware\)|\(trial\)|\(time-limited\s+trial\))',
+    r'\(demo\)|\(shareware\)|\(trial\)|\(time-limited\s+trial\)|'
+    r'\bfor\s+just\s+\$\d+|\bfree\s+up\s+your\b|'
+    r'(?<!1)\b[1-9]\d?%\s*(?:off|discount)\b)',
     re.IGNORECASE
 )
 

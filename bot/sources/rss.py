@@ -85,7 +85,10 @@ class RSSSource(BaseSource):
         if is_reddit:
             # Nghỉ ngắn và dùng User-Agent chuẩn Reddit API để tránh lỗi 429 Too Many Requests
             time.sleep(2.5)
-            headers = {'User-Agent': REDDIT_USER_AGENT or 'python:me.buongloi.giveawaybot:v2.1 (by /u/BuongLoi)'}
+            ua = REDDIT_USER_AGENT
+            if not ua or 'your_username' in ua:
+                ua = 'python:me.buongloi.giveawaybot:v2.1 (by /u/BuongLoi)'
+            headers = {'User-Agent': ua}
         else:
             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) GiveawayBot/2.1'}
 
