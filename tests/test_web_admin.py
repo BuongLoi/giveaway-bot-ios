@@ -102,3 +102,36 @@ def test_config_checkbox_saving(client):
     page_html = resp.data.decode("utf-8")
     assert 'name="SOURCE_GOTD_IOS" value="1" checked' in page_html
     assert 'name="SOURCE_TICKCOUPON" value="1" checked' not in page_html
+
+
+def test_api_v2_list_detail_stats(client):
+    from bot.database import insert_giveaway
+    insert_giveaway({"source": "epic_games", "canonical_url": "https://epic/sker", "title": "Sker Ritual",
+                     "platform": "game", "confidence_score": 95, "worth": "$29.99", "worth_value": 29.99,
+                     "image_url": "https://img", "store": "epic", "store_url": "https://epic/sker",
+                     "expires_at": "2099-01-01T00:00:00+00:00", "status": "active"})
+    insert_giveaway({"source": "epic_games", "canonical_url": "https://epic/old", "title": "Old Game",
+                     "platform": "game", "confidence_score": 95, "status": "expired"})
+
+    r = client.get("/api/v2/giveaways?platform=game")
+    assert r.status_code == 200
+    data = r.get_json()
+    assert [i["title"] for i in data["items"]] == ["Sker Ritual"]
+    item = data["items"][0]
+    assert item["worth_value"] == 29.99 and item["claim_url"] == "https://epic/sker" and item["status"] == "active"
+
+    assert client.get("/api/v2/giveaways?status=expired").get_json()["total"] == 1
+    assert client.get("/api/v2/giveaways?sort=worth").get_json()["items"][0]["title"] == "Sker Ritual"
+    assert client.get("/api/v2/giveaways?q=sker").get_json()["total"] == 1
+    assert client.get(f"/api/v2/giveaways?ids={item['id']}").get_json()["total"] == 1
+
+    d = client.get(f"/api/v2/giveaways/{item['id']}")
+    assert d.status_code == 200 and d.get_json()["item"]["title"] == "Sker Ritual"
+    assert client.get("/api/v2/giveaways/99999").status_code == 404
+
+    s = client.get("/api/v2/stats").get_json()
+    assert s["platforms"]["game"] == 1 and s["platforms"]["ios"] == 1
+    assert s["total_worth"] == 29.99
+
+    # Trang web cũ không còn hiện bài đã hết hạn
+    assert "Old Game" not in client.get("/giveaways").data.decode("utf-8")

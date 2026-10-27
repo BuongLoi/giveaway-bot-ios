@@ -28,15 +28,18 @@ targets:
       properties:
         CFBundleDisplayName: "Giveaway Hunter"
         CFBundleIdentifier: "me.buongloi.giveaway"
-        CFBundleShortVersionString: "2.0.0"
-        CFBundleVersion: "2"
+        CFBundleShortVersionString: "3.0.0"
+        CFBundleVersion: "3"
         UILaunchScreen: {}
+        UIBackgroundModes:
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - me.buongloi.giveaway.refresh
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         ITSAppUsesNonExemptEncryption: false
-        UIRequiresFullScreen: true
         UIStatusBarStyle: UIStatusBarStyleLightContent
-        UIViewControllerBasedStatusBarAppearance: false
+        UIViewControllerBasedStatusBarAppearance: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         UISupportedInterfaceOrientations~ipad:

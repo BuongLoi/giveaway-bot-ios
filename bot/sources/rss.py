@@ -1,3 +1,4 @@
+import os
 import time
 import xml.etree.ElementTree as ET
 import requests
@@ -8,6 +9,26 @@ try:
     import feedparser
 except ImportError:
     feedparser = None
+
+REDDIT_COOLDOWN_SECONDS = 2 * 3600
+_REDDIT_COOLDOWN_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                                     ".reddit_cooldown")
+
+
+def _reddit_in_cooldown() -> bool:
+    try:
+        with open(_REDDIT_COOLDOWN_FILE, "r", encoding="utf-8") as f:
+            return time.time() < float(f.read().strip() or 0)
+    except (OSError, ValueError):
+        return False
+
+
+def _set_reddit_cooldown():
+    try:
+        with open(_REDDIT_COOLDOWN_FILE, "w", encoding="utf-8") as f:
+            f.write(str(time.time() + REDDIT_COOLDOWN_SECONDS))
+    except OSError:
+        pass
 
 
 def _parse_feed_fallback(xml_bytes: bytes) -> list:
@@ -83,6 +104,9 @@ class RSSSource(BaseSource):
         is_reddit = "reddit.com" in self.feed_url.lower()
 
         if is_reddit:
+            if _reddit_in_cooldown():
+                self.logger.info("Reddit đang trong thời gian chờ sau lỗi 429, bỏ qua lượt này.")
+                return []
             # Nghỉ ngắn và dùng User-Agent chuẩn Reddit API để tránh lỗi 429 Too Many Requests
             time.sleep(2.5)
             ua = REDDIT_USER_AGENT
@@ -98,6 +122,10 @@ class RSSSource(BaseSource):
                 self.logger.warning(f"Reddit trả về 429 cho {self.feed_url}, đợi 6s rồi thử lại...")
                 time.sleep(6)
                 response = requests.get(self.feed_url, headers=headers, timeout=REQUEST_TIMEOUT)
+                if response.status_code == 429:
+                    _set_reddit_cooldown()
+                    self.logger.warning(f"Reddit vẫn 429, tạm dừng Reddit {REDDIT_COOLDOWN_SECONDS // 60} phút.")
+                    return []
 
             response.raise_for_status()
 

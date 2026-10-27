@@ -42,13 +42,16 @@ class SecureBasicAuth(BasicAuth):
 
 basic_auth = SecureBasicAuth(app)
 
-PUBLIC_PATHS = {'/', '/giveaways', '/api/giveaways', '/health', '/manifest.json', '/sw.js', '/robots.txt'}
+PUBLIC_PATHS = {'/', '/giveaways', '/api/giveaways', '/health', '/manifest.json', '/sw.js', '/robots.txt',
+                '/api/v2/giveaways', '/api/v2/stats'}
 _last_scan_ts = 0.0
 
 
 @app.before_request
 def require_basic_auth():
-    if request.method in ('GET', 'HEAD') and (request.path in PUBLIC_PATHS or request.path.startswith('/static/')):
+    if request.method in ('GET', 'HEAD') and (
+            request.path in PUBLIC_PATHS or request.path.startswith('/static/')
+            or request.path.startswith('/api/v2/')):
         return None
     if request.method == 'POST' and request.path == '/action/scan':
         return None
@@ -152,7 +155,8 @@ def query_giveaways(search: str = "", platform: str = "", page: int = 1, per_pag
         conn = get_db()
         c = conn.cursor()
 
-        conditions = ["(confidence_score > 0 OR (codes != '' AND codes IS NOT NULL))"]
+        conditions = ["(confidence_score > 0 OR (codes != '' AND codes IS NOT NULL))",
+                      "COALESCE(status, 'active') != 'expired'"]
         params = []
 
         if search:
@@ -237,6 +241,152 @@ def api_giveaways():
         "platform": platform or "all",
         "items": items
     })
+
+
+# ─── API v2 (App iOS native) ─────────────────────────────────────────
+
+V2_COLUMNS = ("id, source, title, canonical_url, store_url, platform, image_url, worth, worth_value, "
+              "expires_at, starts_at, status, codes, tags, description, rating, store, app_id, "
+              "confidence_score, first_seen_at")
+V2_PLATFORMS = ("ios", "windows", "macos", "android", "game", "other")
+V2_VALID = "(confidence_score > 0 OR (codes != '' AND codes IS NOT NULL))"
+
+
+def _serialize_v2(row: dict) -> dict:
+    claim_url = row.get("store_url") or row.get("canonical_url") or ""
+    return {
+        "id": row["id"],
+        "title": row.get("title") or "",
+        "source": row.get("source") or "",
+        "url": row.get("canonical_url") or "",
+        "claim_url": claim_url,
+        "platform": row.get("platform") or "other",
+        "platform_badge": get_platform_badge(row.get("platform") or "other"),
+        "image_url": row.get("image_url") or "",
+        "worth": row.get("worth") or "",
+        "worth_value": float(row.get("worth_value") or 0),
+        "expires_at": row.get("expires_at") or None,
+        "starts_at": row.get("starts_at") or None,
+        "status": row.get("status") or "active",
+        "codes": [c.strip() for c in (row.get("codes") or "").split(",") if c.strip()],
+        "tags": [t.strip() for t in (row.get("tags") or "").split(",") if t.strip()],
+        "description": (row.get("description") or "")[:800],
+        "rating": float(row.get("rating") or 0),
+        "store": row.get("store") or "",
+        "app_id": row.get("app_id") or "",
+        "confidence": int(row.get("confidence_score") or 0),
+        "first_seen_at": row.get("first_seen_at") or "",
+    }
+
+
+def query_v2(params) -> tuple:
+    page = max(1, params.get('page', 1, type=int))
+    per_page = min(100, max(1, params.get('per_page', 30, type=int)))
+    platform = (params.get('platform') or '').strip().lower()
+    status = (params.get('status') or 'active').strip().lower()
+    sort = (params.get('sort') or 'new').strip().lower()
+    search = (params.get('q') or '').strip()
+    since = (params.get('since') or '').strip()
+    ids = [i for i in (params.get('ids') or '').split(',') if i.strip().isdigit()][:200]
+
+    conditions, args = [V2_VALID], []
+    if ids:
+        conditions.append(f"id IN ({','.join('?' for _ in ids)})")
+        args.extend(int(i) for i in ids)
+    else:
+        if status in ('active', 'upcoming', 'expired'):
+            conditions.append("COALESCE(status, 'active') = ?")
+            args.append(status)
+        elif status == 'ending':
+            conditions.append("COALESCE(status, 'active') = 'active' AND expires_at != '' AND expires_at IS NOT NULL "
+                              "AND expires_at <= ?")
+            args.append(datetime.fromtimestamp(time.time() + 48 * 3600, tz=timezone.utc).replace(microsecond=0).isoformat())
+        if platform in V2_PLATFORMS:
+            conditions.append("platform = ?")
+            args.append(platform)
+        elif platform == 'has_code':
+            conditions.append("codes != '' AND codes IS NOT NULL")
+        if search:
+            like = f"%{search}%"
+            conditions.append("(title LIKE ? OR description LIKE ? OR source LIKE ? OR store LIKE ?)")
+            args.extend([like] * 4)
+        if since:
+            conditions.append("first_seen_at > ?")
+            args.append(since)
+
+    order = {
+        'ending': "CASE WHEN expires_at = '' OR expires_at IS NULL THEN 1 ELSE 0 END, expires_at ASC",
+        'worth': "worth_value DESC, first_seen_at DESC",
+    }.get(sort, "first_seen_at DESC")
+
+    where = " AND ".join(conditions)
+    conn = get_db()
+    try:
+        c = conn.cursor()
+        c.execute(f"SELECT COUNT(*) FROM giveaways WHERE {where}", args)
+        total = c.fetchone()[0]
+        c.execute(f"SELECT {V2_COLUMNS} FROM giveaways WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",
+                  args + [per_page, (page - 1) * per_page])
+        items = [_serialize_v2(dict(r)) for r in c.fetchall()]
+    finally:
+        conn.close()
+    return items, total, page, per_page
+
+
+@app.route('/api/v2/giveaways')
+def api_v2_giveaways():
+    try:
+        init_db()
+        items, total, page, per_page = query_v2(request.args)
+    except Exception as e:
+        logger.error(f"API v2 error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+    return jsonify({
+        "status": "ok", "page": page, "per_page": per_page, "total": total,
+        "has_more": page * per_page < total, "items": items,
+        "server_time": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+    })
+
+
+@app.route('/api/v2/giveaways/<int:item_id>')
+def api_v2_giveaway_detail(item_id: int):
+    conn = get_db()
+    try:
+        row = conn.execute(f"SELECT {V2_COLUMNS} FROM giveaways WHERE id = ?", (item_id,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return jsonify({"status": "error", "message": "not found"}), 404
+    return jsonify({"status": "ok", "item": _serialize_v2(dict(row))})
+
+
+@app.route('/api/v2/stats')
+def api_v2_stats():
+    result = {"status": "ok", "platforms": {}, "active_total": 0, "total_worth": 0.0,
+              "ending_soon": 0, "upcoming": 0, "last_scan_at": None}
+    try:
+        init_db()
+        conn = get_db()
+        c = conn.cursor()
+        active = f"{V2_VALID} AND COALESCE(status, 'active') = 'active'"
+        c.execute(f"SELECT platform, COUNT(*), COALESCE(SUM(worth_value), 0) FROM giveaways WHERE {active} GROUP BY platform")
+        for platform, count, worth in c.fetchall():
+            result["platforms"][platform or "other"] = count
+            result["active_total"] += count
+            result["total_worth"] += float(worth or 0)
+        result["total_worth"] = round(result["total_worth"], 2)
+        soon = datetime.fromtimestamp(time.time() + 48 * 3600, tz=timezone.utc).replace(microsecond=0).isoformat()
+        c.execute(f"SELECT COUNT(*) FROM giveaways WHERE {active} AND expires_at != '' AND expires_at <= ?", (soon,))
+        result["ending_soon"] = c.fetchone()[0]
+        c.execute(f"SELECT COUNT(*) FROM giveaways WHERE {V2_VALID} AND status = 'upcoming'")
+        result["upcoming"] = c.fetchone()[0]
+        c.execute("SELECT MAX(last_seen_at) FROM giveaways")
+        result["last_scan_at"] = c.fetchone()[0]
+        conn.close()
+    except Exception as e:
+        logger.error(f"API v2 stats error: {e}")
+        result["status"] = "error"
+    return jsonify(result)
 
 
 @app.route('/config', methods=['GET', 'POST'])

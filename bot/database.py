@@ -52,6 +52,19 @@ def init_db():
         ("platform", "TEXT DEFAULT 'other'"),
         ("tags", "TEXT DEFAULT ''"),
         ("expiry_hint", "TEXT DEFAULT ''"),
+        # v3: dữ liệu có cấu trúc (ảnh, giá gốc, hạn nhận chính xác, trạng thái)
+        ("image_url", "TEXT DEFAULT ''"),
+        ("worth", "TEXT DEFAULT ''"),
+        ("worth_value", "REAL DEFAULT 0"),
+        ("expires_at", "TEXT DEFAULT ''"),
+        ("starts_at", "TEXT DEFAULT ''"),
+        ("store", "TEXT DEFAULT ''"),
+        ("store_url", "TEXT DEFAULT ''"),
+        ("description", "TEXT DEFAULT ''"),
+        ("app_id", "TEXT DEFAULT ''"),
+        ("rating", "REAL DEFAULT 0"),
+        ("status", "TEXT DEFAULT 'active'"),
+        ("dedup_key", "TEXT DEFAULT ''"),
     ]
     for col_name, col_def in migrations:
         if col_name not in existing_cols:
@@ -62,9 +75,68 @@ def init_db():
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_guid ON giveaways(guid)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_platform ON giveaways(platform)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_first_seen ON giveaways(first_seen_at DESC)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_status ON giveaways(status)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_dedup ON giveaways(dedup_key)')
     conn.commit()
     conn.close()
     logger.debug("Khởi tạo SQLite Database hoàn tất.")
+
+
+# Các cột v3 có thể ghi qua insert_giveaway / update_giveaway_fields
+RECORD_COLUMNS = (
+    "source", "canonical_url", "guid", "title", "published_at", "content_hash", "codes_hash",
+    "codes", "platform", "tags", "expiry_hint", "confidence_score",
+    "image_url", "worth", "worth_value", "expires_at", "starts_at", "store", "store_url",
+    "description", "app_id", "rating", "status", "dedup_key",
+)
+
+
+def find_existing(canonical_url: str, guid: str = "", dedup_key: str = ""):
+    """Tìm bản ghi đã tồn tại theo URL, GUID hoặc khóa chống trùng (cùng game/app từ nhiều nguồn)."""
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute(
+            "SELECT * FROM giveaways WHERE canonical_url = ? OR (guid = ? AND guid != '') "
+            "OR (dedup_key = ? AND dedup_key != '') ORDER BY id LIMIT 1",
+            (canonical_url, guid or "", dedup_key or ""),
+        )
+        row = c.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def insert_giveaway(record: dict) -> int:
+    """Chèn bản ghi mới (chỉ lấy các cột hợp lệ). Trả về id."""
+    now = datetime.now(timezone.utc).isoformat()
+    cols = [k for k in RECORD_COLUMNS if k in record and record[k] is not None]
+    values = [record[k] for k in cols]
+    cols += ["first_seen_at", "last_seen_at"]
+    values += [now, now]
+    placeholders = ", ".join("?" for _ in cols)
+    conn = get_connection()
+    try:
+        c = conn.cursor()
+        c.execute(f"INSERT INTO giveaways ({', '.join(cols)}) VALUES ({placeholders})", values)
+        conn.commit()
+        return c.lastrowid
+    finally:
+        conn.close()
+
+
+def update_giveaway_fields(record_id: int, fields: dict):
+    """Cập nhật một số cột (bỏ qua cột không hợp lệ) và làm mới last_seen_at."""
+    now = datetime.now(timezone.utc).isoformat()
+    safe = {k: v for k, v in (fields or {}).items() if k in RECORD_COLUMNS and v is not None}
+    safe["last_seen_at"] = now
+    sets = ", ".join(f"{k} = ?" for k in safe)
+    conn = get_connection()
+    try:
+        conn.execute(f"UPDATE giveaways SET {sets} WHERE id = ?", list(safe.values()) + [record_id])
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def check_and_save_giveaway(

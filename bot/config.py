@@ -40,8 +40,11 @@ SOURCES_CONFIG = {
     "freeappsforme": is_enabled("SOURCE_FREEAPPSFORME"),
     "geckoandfly": is_enabled("SOURCE_GECKOANDFLY"),
     # ── Game & Reddit (Multireddit iOS + PC) ──
-    "steam_newreleases": is_enabled("SOURCE_STEAM_NEWRELEASES"),
+    "steam_newreleases": is_enabled("SOURCE_STEAM_NEWRELEASES", default=False),
     "reddit_rss": is_enabled("SOURCE_REDDIT_RSS"),
+    # ── v3: API có cấu trúc (ảnh, giá gốc, hạn nhận chính xác) ──
+    "epic_games": is_enabled("SOURCE_EPIC_GAMES"),
+    "gamerpower": is_enabled("SOURCE_GAMERPOWER"),
 }
 
 # Danh sách biến môi trường nguồn để đồng bộ với Web Admin UI
@@ -65,7 +68,13 @@ SOURCE_ENV_KEYS = [
     "SOURCE_GECKOANDFLY",
     "SOURCE_STEAM_NEWRELEASES",
     "SOURCE_REDDIT_RSS",
+    "SOURCE_EPIC_GAMES",
+    "SOURCE_GAMERPOWER",
 ]
+
+# v3: chỉ gửi Telegram cho các nền tảng này (để trống = tất cả). Vd: "ios,windows,game,macos"
+_tg_platforms = os.getenv("TELEGRAM_PLATFORMS", "")
+TELEGRAM_PLATFORMS = [p.strip().lower() for p in _tg_platforms.split(",") if p.strip()]
 
 # Đường dẫn Database
 DB_PATH = os.getenv("DB_PATH", "giveaways.db")
